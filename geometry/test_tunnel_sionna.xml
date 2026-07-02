@@ -1,0 +1,23 @@
+<?xml version='1.0' encoding='utf-8'?>
+<scene version="2.1.0">
+
+
+
+
+
+
+	<bsdf type="itu-radio-material" id="mat-default"><string name="type" value="concrete" /><float name="thickness" value="0.1" /></bsdf><integrator type="path" id="elm__0" name="elm__0">
+		<integer name="max_depth" value="12" />
+	</integrator>
+
+
+
+	<shape type="ply" id="elm__2" name="elm__2">
+		<string name="filename" value="meshes/test_tunnel.ply" />
+		<boolean name="face_normals" value="true" />
+		<ref id="mat-default" name="bsdf" />
+	</shape>
+
+
+
+</scene>

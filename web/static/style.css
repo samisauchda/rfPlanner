@@ -1,0 +1,178 @@
+/* wifisim planner - light theme, Wiener Stadtwerke / Wiener Linien palette.
+   Brand: Wiener Linien Rot #e30014, Stadtwerke Blau #000050, Weiss #ffffff.
+   The coverage colormap (RSSI ramp) is intentionally NOT part of the theme. */
+:root{
+  --wl-red:#e30014;
+  --sw-blue:#000050;
+  --bg:#eef1f6;
+  --panel:#ffffff;
+  --panel-2:#f7f9fc;
+  --line:#d5dbe6;
+  --line-soft:#e6eaf1;
+  --ink:#000050;          /* Stadtwerke blue = primary text */
+  --ink-dim:#5b6478;
+  --ink-faint:#98a2b3;
+  --accent:#e30014;       /* Wiener Linien red */
+  --accent-dim:#b7000f;
+  --good:#00963f;         /* U4 green */
+  --warn:#e30014;
+  --map-bg:#e9edf3;
+  --radius:10px;
+  --mono:ui-monospace,"JetBrains Mono","SF Mono",Menlo,Consolas,monospace;
+  --sans:Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --aside-w:340px;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+  font-size:14px;line-height:1.45;overflow:hidden}
+.app{display:grid;grid-template-columns:1fr 6px var(--aside-w);
+  grid-template-rows:auto 1fr;height:100vh;gap:0;background:var(--line)}
+header{grid-column:1 / -1;grid-row:1;display:flex;align-items:center;gap:18px;
+  padding:12px 20px;background:var(--sw-blue);color:#fff;border-bottom:3px solid var(--wl-red)}
+header .brand{display:flex;align-items:baseline;gap:10px}
+header .brand b{font-weight:800;letter-spacing:.02em;color:#fff}
+header .brand .tag{font-family:var(--mono);font-size:11px;color:#fff;background:var(--wl-red);
+  border-radius:999px;padding:2px 9px}
+header .brand .muted{color:#aeb4d6}
+header .spacer{flex:1}
+.enginepill{font-family:var(--mono);font-size:11px;color:#c7cbe6;
+  border:1px solid #2a2a6b;border-radius:999px;padding:4px 11px}
+.enginepill b{color:#fff}
+.enginepill.rt b{color:#7fe0ff}
+
+/* ---- display (hero) -------------------------------------------------- */
+.stage{grid-row:2;grid-column:1;position:relative;overflow:hidden;background:var(--map-bg)}
+.display{position:absolute;inset:0;background:var(--map-bg);overflow:hidden;
+  box-shadow:0 0 0 1px var(--line) inset;cursor:grab;touch-action:none}
+.display.panning{cursor:grabbing}
+#heatmap{position:absolute;left:0;top:0;image-rendering:pixelated;opacity:.95;
+  pointer-events:none;user-select:none}
+#overlay{position:absolute;inset:0;width:100%;height:100%}
+.display .corner{position:absolute;width:14px;height:14px;border:1px solid var(--sw-blue);
+  opacity:.4;pointer-events:none}
+.display .corner.tl{top:8px;left:8px;border-right:0;border-bottom:0}
+.display .corner.tr{top:8px;right:8px;border-left:0;border-bottom:0}
+.display .corner.bl{bottom:8px;left:8px;border-right:0;border-top:0}
+.display .corner.br{bottom:8px;right:8px;border-left:0;border-top:0}
+.readout{position:absolute;left:14px;bottom:12px;font-family:var(--mono);
+  font-size:11px;color:var(--ink-dim);pointer-events:none;background:rgba(255,255,255,.7);
+  padding:2px 7px;border-radius:6px}
+.readout b{color:var(--ink)}
+.hover{position:absolute;z-index:8;pointer-events:none;display:none;
+  font-family:var(--mono);font-size:11px;color:#fff;background:rgba(0,0,80,.92);
+  border:1px solid var(--wl-red);border-radius:6px;padding:4px 8px;white-space:nowrap;
+  transform:translate(12px,12px);box-shadow:0 4px 14px rgba(0,0,80,.25)}
+.hover b{color:#ffd0d4}
+
+/* ---- toolbar --------------------------------------------------------- */
+.toolbar{position:absolute;top:12px;left:14px;right:14px;display:flex;gap:8px;
+  align-items:center;flex-wrap:wrap;z-index:5}
+.toolbar .grp{display:flex;gap:6px;align-items:center;background:rgba(255,255,255,.92);
+  border:1px solid var(--line);border-radius:8px;padding:5px 8px;
+  box-shadow:0 2px 8px rgba(0,0,80,.06)}
+.toolbar .lbl{font-size:12px}
+.chk{display:flex;gap:5px;align-items:center;font-size:12px;color:var(--ink-dim)}
+button,select,input{font-family:var(--sans);font-size:13px;color:var(--ink)}
+button{background:#fff;border:1px solid var(--line);border-radius:7px;
+  padding:7px 12px;cursor:pointer;transition:border-color .12s,background .12s;color:var(--sw-blue)}
+button:hover{border-color:var(--accent)}
+button.primary{background:var(--wl-red);border-color:var(--wl-red);color:#fff;font-weight:600}
+button.primary:hover{background:var(--accent-dim);border-color:var(--accent-dim)}
+button.ghost{background:transparent}
+button.danger{color:var(--warn);border-color:#f2c4c8}
+button:disabled{opacity:.45;cursor:not-allowed}
+select,input[type=text],input[type=number]{background:#fff;border:1px solid var(--line);
+  border-radius:7px;padding:6px 9px;color:var(--sw-blue)}
+input[type=number]{width:84px}
+label.field{display:flex;flex-direction:column;gap:4px;font-size:11px;color:var(--ink-dim)}
+
+/* segmented toggle */
+.seg{display:flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg button{border:0;border-radius:0;background:#fff;flex:1;padding:7px 8px;font-size:12px}
+.seg button+button{border-left:1px solid var(--line)}
+.seg button.on{background:var(--sw-blue);color:#fff}
+.seg button:disabled{opacity:.4}
+
+/* legend */
+.legend{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:11px;
+  color:var(--ink-dim)}
+.legend .bar{width:140px;height:10px;border-radius:3px;border:1px solid var(--line)}
+
+/* ---- splitter -------------------------------------------------------- */
+.splitter{grid-row:2;grid-column:2;background:var(--line);cursor:col-resize;position:relative}
+.splitter::after{content:"";position:absolute;inset:0 -4px}
+.splitter:hover,.splitter.active{background:var(--accent)}
+
+/* ---- side panel ------------------------------------------------------ */
+aside{grid-row:2;grid-column:3;background:var(--bg);border-left:1px solid var(--line);
+  overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:16px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+  padding:14px;box-shadow:0 1px 3px rgba(0,0,80,.04)}
+.card h3{margin:0 0 10px;font-size:11px;text-transform:uppercase;letter-spacing:.12em;
+  color:var(--ink-dim);font-weight:700}
+.card h3 .hint{float:right;color:var(--ink-faint);font-weight:500;text-transform:none;letter-spacing:0}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.grid2 .full{grid-column:1 / -1}
+.chk.full{grid-column:1 / -1}
+.row{display:flex;justify-content:space-between;font-family:var(--mono);font-size:12px;
+  padding:3px 0;border-bottom:1px dashed var(--line-soft)}
+.row:last-child{border-bottom:0}
+.row span:last-child{color:var(--ink)}
+.muted{color:var(--ink-dim)}
+.empty{color:var(--ink-faint);font-style:italic;font-size:12px}
+code{font-family:var(--mono);font-size:11px;background:var(--panel-2);padding:1px 4px;border-radius:4px}
+
+/* tx list */
+.txlist{display:flex;flex-direction:column;gap:6px}
+.txitem{display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:8px;
+  border:1px solid var(--line);background:#fff;cursor:pointer}
+.txitem:hover{border-color:var(--accent)}
+.txitem.sel{border-color:var(--accent);background:#fff5f5}
+.txitem .dot{width:10px;height:10px;border-radius:50%;flex:none;border:1px solid rgba(0,0,80,.2)}
+.txitem .nm{flex:1;font-weight:600}
+.txitem .meta{font-family:var(--mono);font-size:11px;color:var(--ink-dim)}
+.txitem .cache{font-family:var(--mono);font-size:10px;padding:1px 6px;border-radius:999px;border:1px solid var(--line)}
+.cache.hit{color:var(--good);border-color:#b5e3c4}
+.cache.miss{color:var(--warn);border-color:#f2c4c8}
+
+.btnrow{display:flex;gap:8px;margin-top:6px}
+.btnrow button{flex:1}
+small.note{color:var(--ink-faint);font-size:11px;display:block;margin-top:8px}
+a{color:var(--accent)}
+details summary{cursor:pointer;color:var(--ink-dim);font-size:11px;
+  text-transform:uppercase;letter-spacing:.1em;font-weight:700}
+/* ---- 3D view ---------------------------------------------------------- */
+#display3d{position:absolute;inset:0;display:none;background:
+  linear-gradient(#dfe5ee,#eef1f6);cursor:grab;touch-action:none}
+#display3d.on{display:block}
+#display3d canvas{display:block}
+.display.mode3d #heatmap,.display.mode3d #overlay,
+.display.mode3d .readout,.display.mode3d .hover{display:none !important}
+
+/* ---- transmitter visibility checkbox ---------------------------------- */
+.txitem input[type=checkbox]{margin:0;accent-color:var(--sw-blue);flex:none;
+  width:14px;height:14px;cursor:pointer}
+.txitem.hidden .nm,.txitem.hidden .meta{opacity:.45}
+
+/* ---- route profiles ---------------------------------------------------- */
+.routeslot{display:flex;align-items:center;gap:8px;padding:6px 2px;
+  border-bottom:1px dashed var(--line-soft);font-size:12px}
+.routeslot:last-of-type{border-bottom:0}
+.routeslot .dot{width:10px;height:10px;border-radius:50%;flex:none;
+  border:1px solid rgba(0,0,80,.2)}
+.routeslot .rname{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap;font-weight:600}
+.routeslot .rname .meta{font-family:var(--mono);font-size:10px;color:var(--ink-dim);
+  font-weight:400;margin-left:6px}
+.routeslot button{padding:4px 9px;font-size:12px}
+.routeplot{margin-top:10px}
+.routeplot canvas{display:block;width:100%;height:250px;border:1px solid var(--line);
+  border-radius:8px;background:#fff;cursor:crosshair;touch-action:none}
+.charthint{font-size:10px;color:var(--ink-faint);margin-top:4px;text-align:right}
+
+@media (max-width:900px){
+  .app{grid-template-columns:1fr;grid-template-rows:auto 60vh 1fr}
+  .stage{grid-column:1;grid-row:2}.splitter{display:none}
+  aside{grid-column:1;grid-row:3}
+}

@@ -1,0 +1,13 @@
+# Core (always required)
+numpy>=1.24
+matplotlib>=3.7
+flask>=3.0
+
+# Optional: ray-tracing engine. Sionna RT pulls in Dr.Jit + Mitsuba 3 and works
+# best with a CUDA GPU. Install separately to enable the SionnaRTEngine:
+#
+#   pip install sionna            # full Sionna (PHY/SYS/RT, needs TF or PyTorch)
+#   # or, RT only:
+#   pip install sionna-rt
+#
+# The framework runs without it using the analytical engine.

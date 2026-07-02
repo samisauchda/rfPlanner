@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+.wifisim_cache/
+*.png
+.DS_Store
