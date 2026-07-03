@@ -1,11 +1,10 @@
 # wifisim — a 5 GHz WiFi coverage simulation framework
 
 A modular, extensible link-/system-level simulation tool for **5 GHz WiFi**,
-built around **NVIDIA Sionna RT** ray tracing with a dependency-light analytical
-fallback. Place transmitters, edit them, move them, assign antenna patterns, and
-run coverage / SINR simulations — interactively in a browser or
-programmatically. **Per-transmitter results are cached**, so changing one access
-point never recomputes the others.
+built around **NVIDIA Sionna RT** ray tracing. Place transmitters, edit them,
+move them, assign antenna patterns, and run coverage / SINR simulations —
+interactively in a browser or programmatically. **Per-transmitter results are
+cached**, so changing one access point never recomputes the others.
 
 ```
 ┌─────────────┐   place / edit / move    ┌──────────────┐
@@ -15,9 +14,8 @@ point never recomputes the others.
 └─────────────┘                                 │ per-TX layer (cache miss)
                                          ┌───────▼────────┐   ┌──────────────┐
                                          │  LayerCache    │   │  Engine      │
-                                         │ (mem + disk)   │◄──│ Sionna RT /  │
-                                         └────────────────┘   │ Analytical   │
-                                                              └──────────────┘
+                                         │ (mem + disk)   │◄──│  Sionna RT   │
+                                         └────────────────┘   └──────────────┘
 ```
 
 ## Why it's structured this way
@@ -29,13 +27,9 @@ Everything is organised so that unit can be cached and reused:
   `Transmitter`, `AntennaConfig`). Each exposes a `signature` derived *only*
   from physics-affecting fields, so renaming or recolouring a transmitter is
   free, while moving or re-powering it invalidates just that transmitter.
-* **`wifisim.engines`** — pluggable propagation back-ends behind one interface:
-  * `SionnaRTEngine` — geometry-aware ray tracing via Sionna RT
-    (`load_scene` → `RadioMapSolver`), grouped by frequency/antenna for
-    efficient solves.
-  * `AnalyticalEngine` — vectorised log-distance path loss + real antenna
-    directivity (isotropic, half-wave dipole, 3GPP TR38.901 sector, parametric
-    patch/sector). No GPU, no heavy deps — the framework always runs.
+* **`wifisim.engines`** — `SionnaRTEngine`: geometry-aware ray tracing via
+  Sionna RT (`load_scene` → `RadioMapSolver`), grouped by frequency/antenna for
+  efficient solves.
 * **`wifisim.cache`** — content-addressed two-tier (memory + disk) cache keyed
   on `H(engine | scene | grid | transmitter)`.
 * **`wifisim.combine`** — aggregates per-TX layers into RSS, best-server RSRP,
@@ -47,17 +41,16 @@ Everything is organised so that unit can be cached and reused:
 ## Install
 
 ```bash
-pip install -r requirements.txt        # numpy, matplotlib, flask
+pip install -r requirements.txt
 ```
 
-Optional ray-tracing back-end (recommended, needs a CUDA GPU for speed):
+Sionna RT runs on **CPU via the Dr.Jit LLVM backend** (no GPU required) or on
+GPU via CUDA for large scenes. The `sionna-rt` package is included in
+`requirements.txt`. If you need the full Sionna PHY/SYS stack:
 
 ```bash
-pip install sionna          # or:  pip install sionna-rt
+pip install sionna
 ```
-
-Without Sionna the tool runs on the analytical engine; install Sionna and pass
-`--engine sionna_rt` (or `auto`) to switch to ray tracing — no other change.
 
 ## Use it: web interface
 
@@ -72,8 +65,8 @@ python run_web.py            # http://127.0.0.1:5000
 * **Pan** by dragging empty space; **scroll** to zoom toward the cursor;
   **Reset view** re-fits the scene.
 * **Ray-tracing solver** panel: tune `max depth`, `samples / TX`, `refraction`,
-  `diffraction` live. These apply to the Sionna engine; changing them invalidates
-  cached layers (different solver settings are different results).
+  `diffraction` live. Changing these invalidates cached layers (different solver
+  settings are different results).
 * **Scene geometry** card: load a Mitsuba `.xml` scene (drives Sionna ray
   tracing) and/or a `.ply`/`.obj` **prediction mesh**. A **measurement surface**
   toggle chooses what defines the coverage grid: *Bounding box* (the geometry
@@ -98,9 +91,9 @@ from wifisim import Simulator, SceneConfig, GridSpec, Transmitter, AntennaConfig
 from wifisim import viz
 
 sim = Simulator(
-    scene=SceneConfig(name="empty", path_loss_exponent=2.8, shadowing_std_db=2.0),
+    scene=SceneConfig(name="empty"),
     grid=GridSpec(x_min=-30, x_max=30, y_min=-30, y_max=30, z=1.5, cell_size=0.5),
-    engine="auto",            # Sionna RT if available, else analytical
+    engine="sionna_rt",
     cache=".wifisim_cache",
 )
 
@@ -125,8 +118,7 @@ Real principal-plane antenna files (`.msi`, horizontal + vertical cuts) are a
 first-class antenna type. The 3D pattern is reconstructed with the standard
 sum-of-planes method; the boresight gain is pinned to the file's `GAIN` value
 and the implied directivity/efficiency is reported so you can judge the
-approximation. Both engines use it: the analytical engine evaluates the pattern
-directly (pure NumPy), and the Sionna engine registers it as a DrJit-traceable
+approximation. The Sionna engine registers it as a DrJit-traceable
 `PlanarArray(pattern=...)`.
 
 Library:
@@ -165,9 +157,8 @@ pattern. The `make_msi_antenna` builder and the `wifisim.antenna_msi` module
 ## Reproducibility
 
 Results are pure functions of the (hashable) spec objects and the engine
-signature; shadowing in the analytical engine is seeded deterministically from
-those signatures. The same project + engine always yields the same maps, and the
-cache key encodes every dependency, so a stale result can never be silently
+signature. The same project + engine settings always yield the same maps, and
+the cache key encodes every dependency, so a stale result can never be silently
 served.
 
 ## Extending
@@ -175,30 +166,28 @@ served.
 * **New propagation model** → subclass `engines.base.PropagationEngine`,
   implement `signature` + `compute_layer` (optionally `compute_layers`), and
   register it in `engines.make_engine`.
-* **New antenna pattern** → add it to `models.ANTENNA_PATTERNS` and
-  `engines.analytical.antenna_gain_dbi` (and map it in `SionnaRTEngine`).
+* **New antenna pattern** → add it to `models.ANTENNA_PATTERNS` and map it in
+  `SionnaRTEngine._planar_array`.
 * **New metric** → add an array to `SimulationResult`, compute it in
   `combine.aggregate`, and register a `MetricSpec` in `viz.METRIC_SPECS`.
 * **Real geometry** → set `SceneConfig(name="simple_street_canyon")` or a path
-  to a Mitsuba `.xml` scene and use the Sionna engine.
+  to a Mitsuba `.xml` scene.
 
 ## Tests
 
 ```bash
-python tests/test_core.py          # or: python -m pytest tests/ -q
+python -m pytest tests/ -q          # or: python tests/test_core.py
 ```
 
-Covers signature stability/sensitivity, cache key composition, disk round-trip,
-the "only recompute what changed" guarantee, aggregation/SINR, and rendering.
+Core tests use a dependency-free stub engine and cover signature
+stability/sensitivity, cache key composition, disk round-trip, the "only
+recompute what changed" guarantee, aggregation/SINR, and rendering. Geometry
+and MSI tests are also engine-independent.
 
 ## Notes & limitations
 
-* The analytical engine ignores walls/reflections by design; use Sionna RT for
-  geometry-aware multipath.
 * `SionnaRTEngine` targets the **Sionna RT 1.x / 2.x** solver API
-  (`PathSolver` / `RadioMapSolver`). The radio-map row order can differ between
-  Sionna versions; `flip_rows=True` (default) matches `GridSpec` — flip it if a
-  map looks vertically mirrored.
+  (`RadioMapSolver`). The radio-map row order can differ between Sionna
+  versions; `flip_rows=True` (non-default) corrects a vertically-mirrored map.
 * This is a planning/abstraction tool: SINR uses a co-channel power-sum model,
   not a full PHY-layer BLER abstraction (that would live in a Sionna SYS layer).
-```

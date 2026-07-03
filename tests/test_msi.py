@@ -1,4 +1,4 @@
-"""Tests for MSI antenna-pattern integration (analytical path; no Sionna needed).
+"""Tests for MSI antenna-pattern parsing, evaluation, and cache integration.
 
 A small synthetic .msi file is generated so the tests are self-contained.
 """
@@ -13,6 +13,26 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from wifisim import antenna_msi, AntennaConfig, GridSpec, SceneConfig, Simulator, Transmitter
+from wifisim.engines.base import PropagationEngine
+from wifisim.models import CoverageLayer
+
+
+class _StubEngine(PropagationEngine):
+    name = "stub"
+
+    @property
+    def signature(self) -> str:
+        return "stub000000000"
+
+    def compute_layer(self, scene, grid, tx):
+        ny, nx = grid.shape
+        return CoverageLayer(
+            rsrp_dbm=np.full((ny, nx), -60.0, dtype=np.float32),
+            tx_signature=tx.signature,
+            tx_name=tx.name,
+            channel=tx.channel,
+            engine=self.name,
+        )
 
 
 def _write_msi(path: Path, gain_dbi=15.0, az_hpbw=65.0, el_hpbw=40.0, name="Test Sector"):
@@ -77,7 +97,7 @@ def test_simulator_caches_and_invalidates_on_file_change():
         f = Path(d) / "ant.msi"
         _write_msi(f, gain_dbi=15.0)
         sim = Simulator(SceneConfig(), GridSpec(cell_size=2.0),
-                        engine="analytical", cache=str(Path(d) / "cache"))
+                        engine=_StubEngine(), cache=str(Path(d) / "cache"))
         sim.add_transmitter(Transmitter("AP", (0, 0, 4),
                                         antenna=antenna_msi.make_msi_antenna(str(f))))
         r1 = sim.run()

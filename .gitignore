@@ -3,3 +3,4 @@ __pycache__/
 .wifisim_cache/
 *.png
 .DS_Store
+CLAUDE.md

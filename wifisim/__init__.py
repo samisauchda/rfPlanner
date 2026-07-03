@@ -4,10 +4,10 @@ The package is organised around three replaceable layers:
 
 * ``wifisim.models``     - immutable, hashable description of *what* to simulate
                            (scene, transmitters, antennas, measurement grid).
-* ``wifisim.engines``    - pluggable propagation back-ends that turn a single
-                           transmitter into a per-transmitter coverage layer.
-                           ``SionnaRTEngine`` uses NVIDIA Sionna RT ray tracing;
-                           ``AnalyticalEngine`` is a dependency-light fallback.
+* ``wifisim.engines``    - propagation back-end that turns a single transmitter
+                           into a per-transmitter coverage layer.
+                           ``SionnaRTEngine`` uses NVIDIA Sionna RT ray tracing
+                           (CPU via LLVM or GPU via CUDA).
 * ``wifisim.simulator``  - orchestration, per-transmitter caching, and
                            aggregation of layers into RSS / best-server / SINR.
 

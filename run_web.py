@@ -22,7 +22,7 @@ def main() -> None:
     p = argparse.ArgumentParser(description="wifisim 5 GHz coverage planner")
     p.add_argument("--host", default="127.0.0.1")
     p.add_argument("--port", type=int, default=5000)
-    p.add_argument("--engine", default="auto", choices=["auto", "analytical", "sionna_rt"])
+    p.add_argument("--engine", default="sionna_rt", choices=["sionna_rt"])
     p.add_argument("--cache", default=".wifisim_cache")
     args = p.parse_args()
 

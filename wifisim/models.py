@@ -233,19 +233,21 @@ class SceneConfig:
     """Propagation environment.
 
     ``name`` selects a built-in Sionna scene (e.g. ``"simple_street_canyon"``)
-    or, if it ends in ``.xml``, a Mitsuba scene file path.  The analytical
-    engine ignores geometry and instead uses a log-distance model parameterised
-    by ``path_loss_exponent`` and ``shadowing_std_db``.
+    or, if it ends in ``.xml``, a Mitsuba scene file path.
     """
 
     name: str = "empty"
-    path_loss_exponent: float = 2.7      # analytical model only
-    shadowing_std_db: float = 0.0        # analytical model only (0 = deterministic)
     noise_figure_db: float = cfg.DEFAULT_NOISE_FIGURE_DB
     geometry_file: str = ""              # Mitsuba .xml / mesh used for ray tracing
     geometry_sha: str = ""               # content hash (cache invalidation)
     mesh_file: str = ""                  # prediction-mesh file (measurement surface)
     mesh_sha: str = ""
+
+    @classmethod
+    def from_dict(cls, d: Dict[str, Any]) -> "SceneConfig":
+        """Construct from a dict, ignoring unrecognised keys (e.g. from old project.json)."""
+        valid = set(cls.__dataclass_fields__)  # type: ignore[attr-defined]
+        return cls(**{k: v for k, v in d.items() if k in valid})
 
     @property
     def signature(self) -> str:

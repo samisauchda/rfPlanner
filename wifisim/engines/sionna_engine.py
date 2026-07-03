@@ -92,8 +92,9 @@ class SionnaRTEngine(PropagationEngine):
             import sionna.rt as rt  # noqa: F401
         except Exception as exc:  # pragma: no cover - depends on environment
             raise EngineUnavailable(
-                "Sionna RT is not installed. Install with `pip install sionna` "
-                "(requires a CUDA GPU + Dr.Jit/Mitsuba for best performance)."
+                "Sionna RT is not installed. Install with `pip install sionna-rt`. "
+                "Runs on CPU via the Dr.Jit LLVM backend; a CUDA GPU is optional "
+                "but accelerates large scenes."
             ) from exc
 
         self._rt = rt

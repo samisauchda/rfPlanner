@@ -19,7 +19,7 @@ from wifisim.engines import available_engines
 
 def main() -> None:
     p = argparse.ArgumentParser()
-    p.add_argument("--engine", default="auto", choices=["auto", "analytical", "sionna_rt"])
+    p.add_argument("--engine", default="sionna_rt", choices=["sionna_rt"])
     p.add_argument("--metric", default="best_rsrp",
                    choices=["best_rsrp", "rss", "sinr", "best_server"])
     p.add_argument("--out", default="coverage.png")
@@ -29,7 +29,7 @@ def main() -> None:
     print("available engines:", available_engines())
 
     sim = Simulator(
-        scene=SceneConfig(name="empty", path_loss_exponent=2.8, shadowing_std_db=2.0),
+        scene=SceneConfig(name="empty"),
         grid=GridSpec(x_min=-30, x_max=30, y_min=-30, y_max=30, z=1.5, cell_size=0.5),
         engine=args.engine,
         cache=args.cache,

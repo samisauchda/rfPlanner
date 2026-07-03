@@ -56,7 +56,7 @@ def create_app(cache_dir: str = ".wifisim_cache", engine: str = "auto") -> Flask
         engine_kwargs["max_depth"] = int(os.environ["WIFISIM_MAX_DEPTH"])
 
     sim = Simulator(
-        scene=SceneConfig(name="empty", path_loss_exponent=2.8, shadowing_std_db=2.0),
+        scene=SceneConfig(name="empty"),
         grid=GridSpec(x_min=-30, x_max=30, y_min=-30, y_max=30, z=1.5, cell_size=0.5),
         engine=engine,
         cache=cache_dir,
@@ -215,8 +215,6 @@ def create_app(cache_dir: str = ".wifisim_cache", engine: str = "auto") -> Flask
 
         sim.scene = SceneConfig(
             name=("empty" if geo_path else sim.scene.name),
-            path_loss_exponent=sim.scene.path_loss_exponent,
-            shadowing_std_db=sim.scene.shadowing_std_db,
             noise_figure_db=sim.scene.noise_figure_db,
             geometry_file=geo_path, geometry_sha=geo_sha,
             mesh_file=mesh_path, mesh_sha=mesh_sha,
@@ -313,7 +311,7 @@ def create_app(cache_dir: str = ".wifisim_cache", engine: str = "auto") -> Flask
         s = data.get("scene", {})
         g = data.get("grid", {})
         if s:
-            sim.scene = SceneConfig(**{**_scene_dict(sim.scene), **s})
+            sim.scene = SceneConfig.from_dict({**_scene_dict(sim.scene), **s})
         if g:
             sim.grid = GridSpec(**{**_grid_dict(sim.grid), **g})
         autosave()

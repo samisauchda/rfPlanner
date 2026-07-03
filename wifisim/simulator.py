@@ -36,7 +36,7 @@ class Simulator:
         self,
         scene: Optional[SceneConfig] = None,
         grid: Optional[GridSpec] = None,
-        engine: "PropagationEngine | str" = "auto",
+        engine: "PropagationEngine | str" = "sionna_rt",
         cache: "LayerCache | None | str" = ".wifisim_cache",
         engine_kwargs: Optional[dict] = None,
     ) -> None:
@@ -148,7 +148,7 @@ class Simulator:
         }
 
     def load_dict(self, data: dict) -> None:
-        self.scene = SceneConfig(**data.get("scene", {}))
+        self.scene = SceneConfig.from_dict(data.get("scene", {}))
         self.grid = GridSpec(**data.get("grid", {}))
         self._txs = {}
         for td in data.get("transmitters", []):
