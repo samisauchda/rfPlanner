@@ -180,6 +180,7 @@ function selectTx(name){
   state.selected=name; const tx=state.txs.find(t=>t.name===name);
   const card=el("editorCard");
   if(!tx){ card.style.display="none"; draw(); renderTxList(); return; }
+  setTab("aps");
   card.style.display="block"; el("editorName").textContent=name;
   el("f_name").value=tx.name;
   el("f_x").value=tx.position[0]; el("f_y").value=tx.position[1]; el("f_z").value=tx.position[2];
@@ -1023,8 +1024,20 @@ function rebuild3D(){
   }
 }
 
+/* ---------- tab switching --------------------------------------------- */
+function setTab(name){
+  document.querySelectorAll(".tab").forEach(b=>b.classList.toggle("on",b.dataset.tab===name));
+  document.querySelectorAll(".tabpanel").forEach(p=>{
+    p.style.display = p.id==="tab-"+name ? "flex" : "none";
+  });
+  LS.set("activeTab",name);
+}
+
 /* ---------- init ------------------------------------------------------ */
 async function init(){
+  document.querySelectorAll(".tab").forEach(b=>b.onclick=()=>setTab(b.dataset.tab));
+  setTab(LS.get("activeTab","aps"));
+
   state.options=await api.get("/api/options");
   try{ state.patterns=(await api.get("/api/patterns")).patterns||[]; }catch(e){ state.patterns=[]; }
   el("metric").innerHTML="";

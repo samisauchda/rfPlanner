@@ -60,128 +60,74 @@
   <div class="splitter" id="splitter" title="Drag to resize"></div>
 
   <aside>
-    <div class="card">
-      <h3>Transmitters <span class="hint">+ Add AP, drag to move</span></h3>
-      <div id="txlist" class="txlist"></div>
+    <nav class="tabs">
+      <button class="tab" data-tab="aps">APs</button>
+      <button class="tab" data-tab="scene">Scene</button>
+      <button class="tab" data-tab="solver">Solver</button>
+      <button class="tab" data-tab="routes">Routes</button>
+    </nav>
+
+    <!-- APs tab -->
+    <div class="tabpanel" id="tab-aps">
+      <div class="card">
+        <h3>Transmitters <span class="hint">+ Add AP, drag to move</span></h3>
+        <div id="txlist" class="txlist"></div>
+      </div>
+
+      <div class="card" id="editorCard" style="display:none">
+        <h3>Edit <span class="hint" id="editorName"></span></h3>
+        <div class="grid2">
+          <label class="field full">name
+            <input type="text" id="f_name"></label>
+          <label class="field">x [m]<input type="number" id="f_x" step="0.5"></label>
+          <label class="field">y [m]<input type="number" id="f_y" step="0.5"></label>
+          <label class="field">height z [m]<input type="number" id="f_z" step="0.1"></label>
+          <label class="field">power [dBm]<input type="number" id="f_pwr" step="1"></label>
+          <label class="field">channel<select id="f_ch"></select></label>
+          <label class="field">bandwidth [MHz]<select id="f_bw"></select></label>
+          <label class="field full">antenna<select id="f_ant"></select></label>
+          <label class="field">azimuth [&deg;]<input type="number" id="f_az" step="5"></label>
+          <label class="field">peak gain [dBi]<input type="number" id="f_gain" step="0.5"></label>
+          <label class="field">az HPBW [&deg;]<input type="number" id="f_hpbw" step="5"></label>
+        </div>
+        <div class="btnrow">
+          <button id="dupBtn" class="ghost">Duplicate</button>
+          <button id="delBtn" class="ghost danger">Delete</button>
+        </div>
+        <small class="note">Edits recompute only this transmitter; others are served from cache.</small>
+      </div>
     </div>
 
-    <div class="card" id="editorCard" style="display:none">
-      <h3>Edit <span class="hint" id="editorName"></span></h3>
-      <div class="grid2">
-        <label class="field full">name
-          <input type="text" id="f_name"></label>
-        <label class="field">x [m]<input type="number" id="f_x" step="0.5"></label>
-        <label class="field">y [m]<input type="number" id="f_y" step="0.5"></label>
-        <label class="field">height z [m]<input type="number" id="f_z" step="0.1"></label>
-        <label class="field">power [dBm]<input type="number" id="f_pwr" step="1"></label>
-        <label class="field">channel<select id="f_ch"></select></label>
-        <label class="field">bandwidth [MHz]<select id="f_bw"></select></label>
-        <label class="field full">antenna<select id="f_ant"></select></label>
-        <label class="field">azimuth [&deg;]<input type="number" id="f_az" step="5"></label>
-        <label class="field">peak gain [dBi]<input type="number" id="f_gain" step="0.5"></label>
-        <label class="field">az HPBW [&deg;]<input type="number" id="f_hpbw" step="5"></label>
-      </div>
-      <div class="btnrow">
-        <button id="dupBtn" class="ghost">Duplicate</button>
-        <button id="delBtn" class="ghost danger">Delete</button>
-      </div>
-      <small class="note">Edits recompute only this transmitter; others are served from cache.</small>
-    </div>
-
-    <div class="card">
-      <h3>Scene geometry <span class="hint" id="geoFit"></span></h3>
-      <div class="grid2">
-        <label class="field full">geometry (.xml/.ply/.obj)
-          <select id="g_geo"></select></label>
-        <label class="field full">prediction mesh (.ply/.obj)
-          <select id="g_mesh"></select></label>
-        <div class="full">
-          <div class="muted" style="font-size:11px;margin-bottom:4px">measurement surface</div>
-          <div class="seg" id="gridSource">
-            <button data-v="bbox" class="on">Bounding box</button>
-            <button data-v="mesh">Prediction mesh</button>
+    <!-- Scene tab -->
+    <div class="tabpanel" id="tab-scene" style="display:none">
+      <div class="card">
+        <h3>Scene geometry <span class="hint" id="geoFit"></span></h3>
+        <div class="grid2">
+          <label class="field full">geometry (.xml/.ply/.obj)
+            <select id="g_geo"></select></label>
+          <label class="field full">prediction mesh (.ply/.obj)
+            <select id="g_mesh"></select></label>
+          <div class="full">
+            <div class="muted" style="font-size:11px;margin-bottom:4px">measurement surface</div>
+            <div class="seg" id="gridSource">
+              <button data-v="bbox" class="on">Bounding box</button>
+              <button data-v="mesh">Prediction mesh</button>
+            </div>
           </div>
         </div>
+        <div class="btnrow">
+          <button id="applyGeo">Load &amp; fit view</button>
+          <button id="clearGeo" class="ghost">Clear</button>
+        </div>
+        <small class="note">Drop files in the <code>geometry/</code> folder. Geometry drives
+          Sionna ray tracing; <b>Bounding box</b> uses the geometry extent (or your manual
+          grid bounds), <b>Prediction mesh</b> uses the loaded mesh's area &amp; height.
+          The view auto-fits.</small>
       </div>
-      <div class="btnrow">
-        <button id="applyGeo">Load &amp; fit view</button>
-        <button id="clearGeo" class="ghost">Clear</button>
-      </div>
-      <small class="note">Drop files in the <code>geometry/</code> folder. Geometry drives
-        Sionna ray tracing; <b>Bounding box</b> uses the geometry extent (or your manual
-        Scene &amp; grid bounds), <b>Prediction mesh</b> uses the loaded mesh's area &amp; height.
-        The view auto-fits.</small>
-    </div>
 
-    <div class="card">
-      <h3>Ray-tracing solver <span class="hint" id="solverApplies"></span></h3>
-      <div class="grid2">
-        <label class="field">max depth<input type="number" id="e_depth" step="1" min="0"></label>
-        <label class="field">samples / TX<select id="e_samples">
-          <option value="100000">1e5 (fast)</option>
-          <option value="1000000">1e6 (default)</option>
-          <option value="5000000">5e6</option>
-          <option value="20000000">2e7 (accurate)</option>
-        </select></label>
-        <label class="chk full"><input type="checkbox" id="e_refraction"> refraction (transmission)</label>
-        <label class="chk full"><input type="checkbox" id="e_diffraction"> diffraction (edges)</label>
-      </div>
-      <div class="btnrow"><button id="applyEngine">Apply solver settings</button></div>
-      <small class="note">Higher depth/samples = more accurate, slower. Changing these
-        invalidates cached layers (they are different results).</small>
-    </div>
-
-    <div class="card">
-      <h3>Results</h3>
-      <div id="stats"><span class="empty">Run a simulation to see results.</span></div>
-    </div>
-
-    <div class="card">
-      <h3>Route profiles <span class="hint">CSV: point_index,x,y,z</span></h3>
-      <div class="routeslot" data-slot="A">
-        <span class="dot" style="background:#008f95"></span>
-        <span class="rname" id="routeNameA"><span class="empty">no route A</span></span>
-        <input type="file" id="routeFileA" accept=".csv,text/csv" hidden>
-        <button class="ghost" id="routeLoadA">Load A</button>
-        <button class="ghost danger" id="routeClearA" disabled>&times;</button>
-      </div>
-      <div class="routeslot" data-slot="B">
-        <span class="dot" style="background:#ef7c00"></span>
-        <span class="rname" id="routeNameB"><span class="empty">no route B</span></span>
-        <input type="file" id="routeFileB" accept=".csv,text/csv" hidden>
-        <button class="ghost" id="routeLoadB">Load B</button>
-        <button class="ghost danger" id="routeClearB" disabled>&times;</button>
-      </div>
-      <div class="grid2" style="margin-top:9px">
-        <label class="field">sample interval [m]
-          <input type="number" id="routeInterval" step="0.5" min="0.1" value="1"></label>
-        <label class="field">sample radius [m]
-          <input type="number" id="routeRadius" step="0.25" min="0" value="0.5"></label>
-      </div>
-      <div class="btnrow">
-        <button id="routePlot" class="primary" disabled>Plot profiles</button>
-        <button id="routePng" class="ghost" disabled title="Export as PNG (matplotlib)">PNG</button>
-      </div>
-      <div id="routePlotBox" class="routeplot" style="display:none">
-        <canvas id="routeChart"></canvas>
-        <div class="charthint">hover = values &middot; drag = zoom &middot; double-click = reset &middot; click legend = toggle route</div>
-      </div>
-      <small class="note">Each sample averages all grid cells within the radius around the
-        resampled route point (power average for dB metrics; min&ndash;max shown as a band).
-        Uses the metric selected in the toolbar. Hovering the chart marks the position on
-        the map. Routes are drawn on the map and in 3D.</small>
-    </div>
-
-    <div class="card">
-      <h3>Cache</h3>
-      <div id="cacheStats"></div>
-      <div class="btnrow"><button id="clearCache" class="ghost">Clear layer cache</button></div>
-    </div>
-
-    <div class="card">
-      <details>
-        <summary>Scene &amp; grid</summary>
-        <div class="grid2" style="margin-top:12px">
+      <div class="card">
+        <h3>Scene &amp; grid</h3>
+        <div class="grid2">
           <label class="field">RX height z [m]<input type="number" id="s_z" step="0.1"></label>
           <label class="field">cell size [m]<input type="number" id="s_cell" step="0.1"></label>
           <label class="field">x min<input type="number" id="s_xmin" step="1"></label>
@@ -190,8 +136,79 @@
           <label class="field">y max<input type="number" id="s_ymax" step="1"></label>
         </div>
         <div class="btnrow"><button id="applyScene">Apply scene</button></div>
-        <small class="note">Scene geometry (Sionna RT) drives propagation. Grid bounds and cell size apply to the measurement plane.</small>
-      </details>
+        <small class="note">Grid bounds and cell size define the measurement plane; Sionna RT uses the geometry for propagation.</small>
+      </div>
+    </div>
+
+    <!-- Solver tab -->
+    <div class="tabpanel" id="tab-solver" style="display:none">
+      <div class="card">
+        <h3>Ray-tracing solver <span class="hint" id="solverApplies"></span></h3>
+        <div class="grid2">
+          <label class="field">max depth<input type="number" id="e_depth" step="1" min="0"></label>
+          <label class="field">samples / TX<select id="e_samples">
+            <option value="100000">1e5 (fast)</option>
+            <option value="1000000">1e6 (default)</option>
+            <option value="5000000">5e6</option>
+            <option value="20000000">2e7 (accurate)</option>
+          </select></label>
+          <label class="chk full"><input type="checkbox" id="e_refraction"> refraction (transmission)</label>
+          <label class="chk full"><input type="checkbox" id="e_diffraction"> diffraction (edges)</label>
+        </div>
+        <div class="btnrow"><button id="applyEngine">Apply solver settings</button></div>
+        <small class="note">Higher depth/samples = more accurate, slower. Changing these
+          invalidates cached layers (they are different results).</small>
+      </div>
+
+      <div class="card">
+        <h3>Results</h3>
+        <div id="stats"><span class="empty">Run a simulation to see results.</span></div>
+      </div>
+
+      <div class="card">
+        <h3>Cache</h3>
+        <div id="cacheStats"></div>
+        <div class="btnrow"><button id="clearCache" class="ghost">Clear layer cache</button></div>
+      </div>
+    </div>
+
+    <!-- Routes tab -->
+    <div class="tabpanel" id="tab-routes" style="display:none">
+      <div class="card">
+        <h3>Route profiles <span class="hint">CSV: point_index,x,y,z</span></h3>
+        <div class="routeslot" data-slot="A">
+          <span class="dot" style="background:#008f95"></span>
+          <span class="rname" id="routeNameA"><span class="empty">no route A</span></span>
+          <input type="file" id="routeFileA" accept=".csv,text/csv" hidden>
+          <button class="ghost" id="routeLoadA">Load A</button>
+          <button class="ghost danger" id="routeClearA" disabled>&times;</button>
+        </div>
+        <div class="routeslot" data-slot="B">
+          <span class="dot" style="background:#ef7c00"></span>
+          <span class="rname" id="routeNameB"><span class="empty">no route B</span></span>
+          <input type="file" id="routeFileB" accept=".csv,text/csv" hidden>
+          <button class="ghost" id="routeLoadB">Load B</button>
+          <button class="ghost danger" id="routeClearB" disabled>&times;</button>
+        </div>
+        <div class="grid2" style="margin-top:9px">
+          <label class="field">sample interval [m]
+            <input type="number" id="routeInterval" step="0.5" min="0.1" value="1"></label>
+          <label class="field">sample radius [m]
+            <input type="number" id="routeRadius" step="0.25" min="0" value="0.5"></label>
+        </div>
+        <div class="btnrow">
+          <button id="routePlot" class="primary" disabled>Plot profiles</button>
+          <button id="routePng" class="ghost" disabled title="Export as PNG (matplotlib)">PNG</button>
+        </div>
+        <div id="routePlotBox" class="routeplot" style="display:none">
+          <canvas id="routeChart"></canvas>
+          <div class="charthint">hover = values &middot; drag = zoom &middot; double-click = reset &middot; click legend = toggle route</div>
+        </div>
+        <small class="note">Each sample averages all grid cells within the radius around the
+          resampled route point (power average for dB metrics; min&ndash;max shown as a band).
+          Uses the metric selected in the toolbar. Hovering the chart marks the position on
+          the map. Routes are drawn on the map and in 3D.</small>
+      </div>
     </div>
   </aside>
 </div>
