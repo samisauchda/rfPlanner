@@ -14,7 +14,17 @@ __all__ = [
     "SionnaRTEngine",
     "EngineUnavailable",
     "make_engine",
+    "available_engines",
 ]
+
+
+def available_engines() -> dict:
+    """Report which engines can run in the current environment."""
+    try:
+        import sionna.rt  # noqa: F401
+        return {"sionna_rt": True}
+    except Exception:
+        return {"sionna_rt": False}
 
 
 def make_engine(name: str = "sionna_rt", **kwargs: Any) -> PropagationEngine:

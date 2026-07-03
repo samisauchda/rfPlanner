@@ -23,11 +23,10 @@ const state = {
   base:{x0:0,y0:0,w:1,h:1}, view:LS.get("view",{k:1,ox:0,oy:0}),
   drag:null, dpr: window.devicePixelRatio||1,
   geoFiles:[], footprint:{geometry:[],mesh:[]},
-  visible:LS.get("txVisible",{}),          // AP name -> false = hidden in views
   routes:{}, viewMode:"2d",
   geo3d:{geometry:[],mesh:[]}, routeHover:null
 };
-const txVisible = name => state.visible[name] !== false;
+const txVisible = name => { const t=state.txs.find(x=>x.name===name); return !t||t.enabled; };
 
 const el = id => document.getElementById(id);
 const display = el("display"), canvas = el("overlay"), heatmap = el("heatmap");
@@ -156,20 +155,22 @@ function renderTxList(){
   if(!state.txs.length){ box.innerHTML='<span class="empty">No transmitters yet. Use + Add AP.</span>'; }
   state.txs.forEach(tx=>{
     const d=document.createElement("div");
-    d.className="txitem"+(state.selected===tx.name?" sel":"")+(txVisible(tx.name)?"":" hidden");
+    d.className="txitem"+(state.selected===tx.name?" sel":"")+(tx.enabled?"":" hidden");
     const c=state.cacheStatus[tx.name];
-    d.innerHTML=`<input type="checkbox" title="show/hide in views" ${txVisible(tx.name)?"checked":""}>
+    d.innerHTML=`<input type="checkbox" title="include in simulation" ${tx.enabled?"checked":""}>
       <span class="dot" style="background:${tx.color}"></span>
       <span class="nm">${tx.name}</span>
       <span class="meta">ch${tx.channel} \u00b7 ${tx.tx_power_dbm}dBm \u00b7 ${tx.antenna.pattern}</span>
       <span class="cache ${c?'hit':'miss'}">${c?'cached':'dirty'}</span>`;
     const cb=d.querySelector("input");
     cb.onclick=e=>e.stopPropagation();
-    cb.onchange=()=>{
-      state.visible[tx.name]=cb.checked;
-      LS.set("txVisible",state.visible);
-      d.classList.toggle("hidden",!cb.checked);
-      draw(); rebuild3D();
+    cb.onchange=async()=>{
+      const payload={...tx, enabled:cb.checked};
+      const res=await api.send("/api/transmitter","POST",payload);
+      if(res.error){ cb.checked=tx.enabled; return; }
+      state.cacheStatus=res.cache_status;
+      await refreshState(false);
+      maybeAutorun();
     };
     d.onclick=()=>selectTx(tx.name);
     box.appendChild(d);
@@ -453,15 +454,13 @@ async function clearGeometry(){
 
 /* ---------- scene + engine settings ----------------------------------- */
 function syncSceneInputs(){
-  const g=state.grid, s=state.scene;
-  el("s_ple").value=s.path_loss_exponent; el("s_shadow").value=s.shadowing_std_db;
+  const g=state.grid;
   el("s_z").value=g.z; el("s_cell").value=g.cell_size;
   el("s_xmin").value=g.x_min; el("s_xmax").value=g.x_max;
   el("s_ymin").value=g.y_min; el("s_ymax").value=g.y_max;
 }
 async function applyScene(){
-  const body={ scene:{path_loss_exponent:+el("s_ple").value, shadowing_std_db:+el("s_shadow").value},
-    grid:{z:+el("s_z").value, cell_size:+el("s_cell").value, x_min:+el("s_xmin").value,
+  const body={ grid:{z:+el("s_z").value, cell_size:+el("s_cell").value, x_min:+el("s_xmin").value,
       x_max:+el("s_xmax").value, y_min:+el("s_ymin").value, y_max:+el("s_ymax").value} };
   await api.send("/api/scene","POST",body); resetView(); await refreshState(true); maybeAutorun();
 }

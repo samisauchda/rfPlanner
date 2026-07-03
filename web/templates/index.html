@@ -182,8 +182,6 @@
       <details>
         <summary>Scene &amp; grid</summary>
         <div class="grid2" style="margin-top:12px">
-          <label class="field">PL exponent<input type="number" id="s_ple" step="0.1"></label>
-          <label class="field">shadowing &sigma; [dB]<input type="number" id="s_shadow" step="0.5"></label>
           <label class="field">RX height z [m]<input type="number" id="s_z" step="0.1"></label>
           <label class="field">cell size [m]<input type="number" id="s_cell" step="0.1"></label>
           <label class="field">x min<input type="number" id="s_xmin" step="1"></label>
@@ -192,8 +190,7 @@
           <label class="field">y max<input type="number" id="s_ymax" step="1"></label>
         </div>
         <div class="btnrow"><button id="applyScene">Apply scene</button></div>
-        <small class="note">PL exponent &amp; shadowing apply to the analytical engine.
-          With Sionna RT installed, scene geometry drives propagation instead.</small>
+        <small class="note">Scene geometry (Sionna RT) drives propagation. Grid bounds and cell size apply to the measurement plane.</small>
       </details>
     </div>
   </aside>
