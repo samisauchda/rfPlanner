@@ -27,7 +27,7 @@ from typing import Any, Dict
 
 from flask import Flask, jsonify, render_template, request
 
-from wifisim import GridSpec, SceneConfig, Simulator, Transmitter, AntennaConfig
+from wifisim import GridSpec, MeshSurface, SceneConfig, Simulator, Transmitter, AntennaConfig
 from wifisim import config as cfg
 from wifisim import viz, antenna_msi, geometry as geo
 from wifisim import routes as wroutes
@@ -83,11 +83,17 @@ def create_app(cache_dir: str = ".wifisim_cache", engine: str = "auto") -> Flask
             pass
 
     # ------------------------------------------------------------------ #
+    def _active_surface():
+        if sim.mode == "mesh" and sim.mesh_surface is not None:
+            return sim.mesh_surface
+        return sim.grid
+
     def cache_status() -> Dict[str, bool]:
         """name -> True if this transmitter's layer is already cached."""
         status = {}
+        surface = _active_surface()
         for tx in sim.transmitters:
-            key = layer_key(sim.engine.signature, sim.scene, sim.grid, tx)
+            key = layer_key(sim.engine.signature, sim.scene, surface, tx)
             status[tx.name] = sim.cache.contains(key)
         return status
 
@@ -99,10 +105,31 @@ def create_app(cache_dir: str = ".wifisim_cache", engine: str = "auto") -> Flask
         p["applies"] = sim.engine.name == "sionna_rt"
         return p
 
+    def _mesh_bounds() -> Any:
+        """XY/Z bounds of the active mesh surface, for the front-end's view
+        fit (pan/zoom/3D camera) -- irrelevant to the RT computation itself."""
+        if sim.mode != "mesh" or not sim.mesh_surface:
+            return None
+        try:
+            return geo.load_mesh(sim.mesh_surface.mesh_file).bounds
+        except Exception:
+            return None
+
+    def _geometry_z_max() -> Any:
+        """Height of the active prediction-mesh coverage plane, used to hide
+        geometry above it (e.g. upper floors) in the 2D footprint -- ``None``
+        in bbox/grid mode, where the full geometry footprint is shown."""
+        mb = _mesh_bounds()
+        return mb["z_max"] if mb else None
+
     def state_payload() -> Dict[str, Any]:
+        from dataclasses import asdict
         return {
             "scene": _scene_dict(sim.scene),
             "grid": _grid_dict(sim.grid),
+            "mode": sim.mode,
+            "mesh_surface": asdict(sim.mesh_surface) if sim.mesh_surface else None,
+            "mesh_bounds": _mesh_bounds(),
             "engine": {
                 "name": sim.engine.name,
                 "available": available_engines(),
@@ -221,26 +248,35 @@ def create_app(cache_dir: str = ".wifisim_cache", engine: str = "auto") -> Flask
         )
         bounds = None
         z = None
-        if grid_source == "mesh" and mesh_bounds:
-            bounds = mesh_bounds
-            z = 0.5 * (mesh_bounds["z_min"] + mesh_bounds["z_max"])
-        elif grid_source == "bbox" and geo_bounds:
-            bounds = geo_bounds
-        elif grid_source in ("mesh", "bbox"):
-            # requested source unavailable; fall back to whatever we have
-            bounds = geo.union_bounds(mesh_bounds, geo_bounds)
-            if mesh_bounds:
-                z = 0.5 * (mesh_bounds["z_min"] + mesh_bounds["z_max"])
         fitted = False
-        if bounds and grid_source != "manual":
-            sim.grid = geo.grid_from_bounds(bounds, cell_size=cell_size, z=z)
+        if grid_source == "mesh" and mesh_bounds:
+            # Mesh-native mode: coverage is computed directly on the mesh's
+            # own triangles (see wifisim.engines.sionna_engine.compute_layers_mesh)
+            # -- no bounding box or cell size is touched.  `sim.grid` is left
+            # untouched so it's still there if the user switches back to bbox.
+            bounds = mesh_bounds
+            sim.mesh_surface = MeshSurface(mesh_file=mesh_path, mesh_sha=mesh_sha)
+            sim.mode = "mesh"
             fitted = True
+        else:
+            sim.mode = "grid"
+            if grid_source == "bbox" and geo_bounds:
+                bounds = geo_bounds
+            elif grid_source in ("mesh", "bbox"):
+                # requested source unavailable; fall back to whatever we have
+                bounds = geo.union_bounds(mesh_bounds, geo_bounds)
+                if mesh_bounds:
+                    z = 0.5 * (mesh_bounds["z_min"] + mesh_bounds["z_max"])
+            if bounds and grid_source != "manual":
+                sim.grid = geo.grid_from_bounds(bounds, cell_size=cell_size, z=z)
+                fitted = True
         autosave()
         payload = state_payload()
         n_fp = 0
+        z_thr = mesh_bounds["z_max"] if (grid_source == "mesh" and mesh_bounds) else None
         try:
             if geo_path:
-                n_fp += len(geo.geometry_info(geo_path).segments)
+                n_fp += len(geo.geometry_info(geo_path, z_max=z_thr).segments)
             if mesh_path:
                 n_fp += len(geo.footprint_segments(geo.load_mesh(mesh_path)))
         except Exception:
@@ -254,11 +290,17 @@ def create_app(cache_dir: str = ".wifisim_cache", engine: str = "auto") -> Flask
 
     @app.get("/api/footprint")
     def footprint():
-        """XY-projected edges of the current geometry/mesh, for drawing."""
+        """XY-projected edges of the current geometry/mesh, for drawing.
+
+        In mesh mode, geometry above the coverage plane (e.g. upper floors of
+        a multi-storey model) is dropped so the visible footprint isn't
+        dominated by structure that's irrelevant to the active prediction.
+        """
         out = {"geometry": [], "mesh": []}
         try:
             if sim.scene.geometry_file:
-                out["geometry"] = geo.geometry_info(sim.scene.geometry_file).segments
+                out["geometry"] = geo.geometry_info(sim.scene.geometry_file,
+                                                     z_max=_geometry_z_max()).segments
         except Exception:
             pass
         try:
@@ -370,8 +412,8 @@ def create_app(cache_dir: str = ".wifisim_cache", engine: str = "auto") -> Flask
         # Snapshot which TXs were already cached (i.e. will be hits this run).
         pre = cache_status()
         result = sim.run(force=force)
-        overlay = viz.render_overlay(result, metric,
-                                     data.get("vmin"), data.get("vmax"))
+        render = viz.render_mesh_overlay if sim.mode == "mesh" else viz.render_overlay
+        overlay = render(result, metric, data.get("vmin"), data.get("vmax"))
         per_tx = [
             {"name": t.name, "cached_before_run": pre.get(t.name, False),
              "signature": t.signature}
@@ -457,6 +499,9 @@ def create_app(cache_dir: str = ".wifisim_cache", engine: str = "auto") -> Flask
         """
         if not route_store:
             return jsonify({"error": "no routes loaded"}), 400
+        if sim.mode == "mesh":
+            return jsonify({"error": "Route profiles aren't supported in "
+                                      "mesh-native mode yet"}), 400
         data = request.get_json(force=True) or {}
         metric = data.get("metric", "best_rsrp")
         interval = max(0.1, float(data.get("interval", 1.0)))

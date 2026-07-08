@@ -27,7 +27,7 @@ from typing import Dict, List, Tuple
 
 import numpy as np
 
-from ..models import AntennaConfig, CoverageLayer, GridSpec, SceneConfig, Transmitter
+from ..models import AntennaConfig, CoverageLayer, GridSpec, MeshSurface, SceneConfig, Transmitter
 from .base import PropagationEngine
 
 _RSS_FLOOR_DBM = -200.0  # value assigned to cells with no received power
@@ -98,7 +98,7 @@ class SionnaRTEngine(PropagationEngine):
             ) from exc
 
         self._rt = rt
-        self._sionna_version = getattr(sionna, "__version__", "unknown")
+        self._sionna_version = getattr(rt, "__version__", getattr(sionna, "__version__", "unknown"))
         self.max_depth = max_depth
         self.samples_per_tx = samples_per_tx
         self.refraction = refraction
@@ -171,6 +171,35 @@ class SionnaRTEngine(PropagationEngine):
         if self.flip_rows:
             dbm = dbm[::-1, :]
         return dbm.astype(np.float32)
+
+    def _rss_to_dbm_1d(self, rss_layer: np.ndarray) -> np.ndarray:
+        """Convert one transmitter's linear RSS (W) to a (N,) dBm vector, one
+        value per mesh triangle -- no row/orientation flip applies here since
+        there is no raster structure."""
+        rss = np.asarray(rss_layer, dtype=np.float64)
+        with np.errstate(divide="ignore"):
+            dbm = 10.0 * np.log10(np.where(rss > 0, rss, np.nan)) + 30.0
+        dbm = np.where(np.isfinite(dbm), dbm, _RSS_FLOOR_DBM)
+        return dbm.astype(np.float32)
+
+    def _measurement_mesh_object(self, surface: MeshSurface):
+        """Load ``surface.mesh_file`` as a Sionna ``SceneObject``.  Its radio
+        material is irrelevant: the measurement surface is pass-through for
+        ray continuation (Sionna treats hits on it as transparent), so any
+        valid material works."""
+        rt = self._rt
+        material = rt.ITURadioMaterial(name="measurement_surface", itu_type="concrete",
+                                        thickness=0.1)
+        return rt.SceneObject(fname=surface.mesh_file, name="measurement_surface",
+                               radio_material=material)
+
+    def mesh_cell_centers(self, scene_cfg: SceneConfig, surface: MeshSurface) -> np.ndarray:
+        rt = self._rt
+        scene = self._load_scene(scene_cfg)
+        mesh_obj = self._measurement_mesh_object(surface)
+        mrm = rt.MeshRadioMap(scene, mesh_obj.mi_mesh)
+        centers = _to_numpy(mrm.cell_centers)  # (3, N)
+        return centers.T.astype(np.float32)    # (N, 3)
 
     # ------------------------------------------------------------------ #
     def compute_layer(
@@ -246,6 +275,74 @@ class SionnaRTEngine(PropagationEngine):
                         "frequency_hz": tx.frequency_hz,
                         "max_depth": self.max_depth,
                         "samples_per_tx": self.samples_per_tx,
+                    },
+                )
+
+        return results
+
+    # ------------------------------------------------------------------ #
+    def compute_layers_mesh(
+        self, scene_cfg: SceneConfig, surface: MeshSurface, txs: List[Transmitter]
+    ) -> Dict[str, CoverageLayer]:
+        """Like :meth:`compute_layers`, but the measurement surface is the
+        prediction mesh's own triangles (``measurement_surface=``) instead of
+        a rectangular plane -- no ``center``/``orientation``/``size``/
+        ``cell_size`` involved, and Sionna ignores them when this is set."""
+        rt = self._rt
+        results: Dict[str, CoverageLayer] = {}
+
+        groups: Dict[Tuple[float, str], List[Transmitter]] = defaultdict(list)
+        for tx in txs:
+            groups[(tx.frequency_hz, tx.antenna.signature)].append(tx)
+
+        for (freq_hz, _ant_sig), group in groups.items():
+            scene = self._load_scene(scene_cfg)
+            scene.frequency = float(freq_hz)
+            scene.tx_array = self._planar_array(group[0].antenna)
+            scene.rx_array = rt.PlanarArray(
+                num_rows=1, num_cols=1, vertical_spacing=0.5,
+                horizontal_spacing=0.5, pattern="iso", polarization="V",
+            )
+            mesh_obj = self._measurement_mesh_object(surface)
+
+            ordered: List[Transmitter] = []
+            for tx in group:
+                sio_tx = rt.Transmitter(
+                    name=f"tx_{tx.signature}",
+                    position=list(tx.position),
+                    orientation=[math.radians(a) for a in tx.orientation],
+                    power_dbm=float(tx.tx_power_dbm),
+                )
+                scene.add(sio_tx)
+                ordered.append(tx)
+
+            rm_solver = rt.RadioMapSolver()
+            rm = rm_solver(
+                scene,
+                max_depth=self.max_depth,
+                measurement_surface=mesh_obj.mi_mesh,
+                samples_per_tx=int(self.samples_per_tx),
+                refraction=self.refraction,
+            )
+
+            # rm.rss: per-transmitter received signal strength (linear, W),
+            # shape [num_tx, num_faces] -- one cell per mesh triangle.
+            rss = _to_numpy(rm.rss)
+
+            for idx, tx in enumerate(ordered):
+                dbm = self._rss_to_dbm_1d(rss[idx])
+                results[tx.signature] = CoverageLayer(
+                    rsrp_dbm=dbm,
+                    tx_signature=tx.signature,
+                    tx_name=tx.name,
+                    channel=tx.channel,
+                    engine=self.name,
+                    meta={
+                        "sionna_version": self._sionna_version,
+                        "frequency_hz": tx.frequency_hz,
+                        "max_depth": self.max_depth,
+                        "samples_per_tx": self.samples_per_tx,
+                        "measurement_surface": True,
                     },
                 )
 

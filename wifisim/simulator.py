@@ -15,7 +15,7 @@ import numpy as np
 from . import combine
 from .cache import LayerCache, layer_key
 from .engines import PropagationEngine, make_engine
-from .models import GridSpec, SceneConfig, SimulationResult, Transmitter
+from .models import GridSpec, MeshSurface, SceneConfig, SimulationResult, Transmitter
 
 
 class Simulator:
@@ -42,6 +42,12 @@ class Simulator:
     ) -> None:
         self.scene = scene or SceneConfig()
         self.grid = grid or GridSpec()
+        #: Mesh-native measurement surface (set when a prediction mesh is
+        #: loaded) and which of ``grid``/``mesh_surface`` is active.  ``grid``
+        #: is kept populated even in mesh mode so switching back to bbox mode
+        #: doesn't lose the previous bounds.
+        self.mesh_surface: Optional[MeshSurface] = None
+        self.mode: str = "grid"
         self.engine: PropagationEngine = (
             engine if isinstance(engine, PropagationEngine)
             else make_engine(engine, **(engine_kwargs or {}))
@@ -106,11 +112,15 @@ class Simulator:
         self.cache.reset_counters()
         active = [t for t in self._txs.values() if t.enabled]
 
+        mesh_mode = self.mode == "mesh" and self.mesh_surface is not None
+        surface = self.mesh_surface if mesh_mode else self.grid
+        compute = self.engine.compute_layers_mesh if mesh_mode else self.engine.compute_layers
+
         layers = {}
         misses: List[Transmitter] = []
         n_hits = 0
         for tx in active:
-            key = layer_key(self.engine.signature, self.scene, self.grid, tx)
+            key = layer_key(self.engine.signature, self.scene, surface, tx)
             cached = None if force else self.cache.get(key)
             if cached is not None:
                 layers[tx.signature] = cached
@@ -119,17 +129,19 @@ class Simulator:
                 misses.append(tx)
 
         if misses:
-            computed = self.engine.compute_layers(self.scene, self.grid, misses)
+            computed = compute(self.scene, surface, misses)
             for tx in misses:
                 layer = computed[tx.signature]
                 layers[tx.signature] = layer
-                key = layer_key(self.engine.signature, self.scene, self.grid, tx)
+                key = layer_key(self.engine.signature, self.scene, surface, tx)
                 self.cache.put(key, layer)
 
         ordered_layers = [layers[t.signature] for t in active]
         result = combine.aggregate(
-            self.grid, self.scene, ordered_layers, active, engine_name=self.engine.name
+            surface, self.scene, ordered_layers, active, engine_name=self.engine.name
         )
+        if mesh_mode:
+            result.cell_centers = self.engine.mesh_cell_centers(self.scene, surface)
         result.cache_hits = n_hits
         result.cache_misses = len(misses)
         result.timing_s = time.perf_counter() - t0
@@ -143,6 +155,8 @@ class Simulator:
         return {
             "scene": asdict(self.scene),
             "grid": asdict(self.grid),
+            "mode": self.mode,
+            "mesh_surface": asdict(self.mesh_surface) if self.mesh_surface else None,
             "engine": self.engine.name,
             "transmitters": [t.to_dict() for t in self._txs.values()],
         }
@@ -150,6 +164,9 @@ class Simulator:
     def load_dict(self, data: dict) -> None:
         self.scene = SceneConfig.from_dict(data.get("scene", {}))
         self.grid = GridSpec(**data.get("grid", {}))
+        ms = data.get("mesh_surface")
+        self.mesh_surface = MeshSurface(**ms) if ms else None
+        self.mode = data.get("mode", "grid")
         self._txs = {}
         for td in data.get("transmitters", []):
             tx = Transmitter.from_dict(td)

@@ -18,9 +18,11 @@ is sufficient for auto-fitting the view).
 from __future__ import annotations
 
 import hashlib
+import math
 import os
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
+from fractions import Fraction
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
@@ -196,10 +198,17 @@ def load_mesh(path: str) -> Mesh:
 # --------------------------------------------------------------------------- #
 # Footprint (XY-projected edges) for drawing
 # --------------------------------------------------------------------------- #
-def footprint_segments(mesh: Mesh, max_segments: int = 1500) -> List[List[float]]:
+def footprint_segments(mesh: Mesh, max_segments: Optional[int] = 30_000,
+                        z_max: Optional[float] = None) -> List[List[float]]:
     """Unique mesh edges projected to the XY plane, as ``[x1,y1,x2,y2]``.
 
-    Down-sampled to ``max_segments`` for responsive drawing.
+    If ``z_max`` is given, only edges whose average height is at or below it
+    are kept -- used to hide geometry above the active prediction-mesh
+    coverage plane instead of showing every floor of a multi-storey model.
+    Down-sampled to ``max_segments`` only if still too many for responsive
+    drawing (``None`` disables the cap, e.g. when a caller wants to merge
+    several meshes and downsample the combined result fairly, see
+    :func:`geometry_info`).
     """
     v = mesh.vertices
     edges = set()
@@ -209,8 +218,10 @@ def footprint_segments(mesh: Mesh, max_segments: int = 1500) -> List[List[float]
             a, b = face[i], face[(i + 1) % n]
             if 0 <= a < len(v) and 0 <= b < len(v):
                 edges.add((a, b) if a < b else (b, a))
+    if z_max is not None:
+        edges = {(a, b) for a, b in edges if (v[a, 2] + v[b, 2]) * 0.5 <= z_max}
     edges = list(edges)
-    if len(edges) > max_segments:
+    if max_segments is not None and len(edges) > max_segments:
         step = len(edges) / max_segments
         edges = [edges[int(i * step)] for i in range(max_segments)]
     segs = []
@@ -248,8 +259,15 @@ class GeometryInfo:
     n_meshes: int
 
 
-def geometry_info(path: str, max_segments: int = 1500) -> GeometryInfo:
-    """Bounds + footprint for a geometry file (mesh or Mitsuba .xml)."""
+def geometry_info(path: str, max_segments: int = 30_000,
+                   z_max: Optional[float] = None) -> GeometryInfo:
+    """Bounds + footprint for a geometry file (mesh or Mitsuba .xml).
+
+    ``z_max``, if given, drops edges above that height (see
+    :func:`footprint_segments`) -- applied per referenced mesh *before* the
+    combined-scene downsample below, so filtering out upper floors also
+    leaves more of the ``max_segments`` budget for what remains visible.
+    """
     ext = os.path.splitext(path)[1].lower()
     if ext == ".xml":
         mesh_paths = xml_mesh_paths(path)
@@ -259,13 +277,16 @@ def geometry_info(path: str, max_segments: int = 1500) -> GeometryInfo:
                              "geometry still ray-traces in Sionna).")
         allv = []
         segs: List[List[float]] = []
-        per = max(50, max_segments // len(mesh_paths))
         errors = []
         for mp in mesh_paths:
             try:
                 m = load_mesh(mp)
                 allv.append(m.vertices)
-                segs.extend(footprint_segments(m, per))
+                # No per-mesh cap here: every mesh contributes all of its
+                # (optionally z-filtered) edges, and the combined list is
+                # downsampled once below -- so a scene built from many small
+                # files doesn't starve each one down to a handful of edges.
+                segs.extend(footprint_segments(m, max_segments=None, z_max=z_max))
             except Exception as exc:  # skip a mesh we cannot read, keep the rest
                 errors.append(f"{os.path.basename(mp)}: {exc}")
         if not allv:
@@ -277,10 +298,14 @@ def geometry_info(path: str, max_segments: int = 1500) -> GeometryInfo:
             "y_min": float(v[:, 1].min()), "y_max": float(v[:, 1].max()),
             "z_min": float(v[:, 2].min()), "z_max": float(v[:, 2].max()),
         }
-        return GeometryInfo(bounds=bounds, segments=segs[:max_segments], n_meshes=len(allv))
+        if len(segs) > max_segments:
+            step = len(segs) / max_segments
+            segs = [segs[int(i * step)] for i in range(max_segments)]
+        return GeometryInfo(bounds=bounds, segments=segs, n_meshes=len(allv))
     # plain mesh
     m = load_mesh(path)
-    return GeometryInfo(bounds=m.bounds, segments=footprint_segments(m, max_segments), n_meshes=1)
+    return GeometryInfo(bounds=m.bounds, segments=footprint_segments(m, max_segments, z_max=z_max),
+                         n_meshes=1)
 
 
 # --------------------------------------------------------------------------- #
@@ -297,16 +322,50 @@ def union_bounds(*bounds: Optional[Dict[str, float]]) -> Optional[Dict[str, floa
     }
 
 
+def _snap_axis(lo: float, hi: float, cell_size: float) -> Tuple[float, float]:
+    """Round ``[lo, hi]`` out to whole metres, then grow ``hi`` so the span is
+    an exact multiple of ``cell_size`` while staying a whole number of metres.
+
+    Sionna's ``RadioMapSolver`` derives its own cell count from ``size /
+    cell_size`` rather than trusting :pyattr:`GridSpec.nx`/``ny``.  If the span
+    is only *almost* a whole number of cells (as it was with unpadded
+    fractional bounds), floating-point noise can make Sionna round to one more
+    or fewer cell than :class:`GridSpec` expects, and combining layers of
+    mismatched shape then raises ``ValueError: could not broadcast``.  Whole
+    -metre limits plus an exact-multiple span keep every consumer's
+    ``size / cell_size`` in agreement.
+
+    The smallest whole-metre span that is also an exact multiple of
+    ``cell_size`` is the numerator of ``cell_size`` written as a reduced
+    fraction (e.g. 0.5 -> 1, 0.3 -> 3, 0.25 -> 1): any larger whole-metre span
+    only needs to be a multiple of that step.
+    """
+    lo = float(math.floor(lo))
+    hi = float(math.ceil(hi))
+    step = Fraction(cell_size).limit_denominator(10_000).numerator or 1
+    span = max(step, int(math.ceil(hi - lo)))
+    n_steps = math.ceil(span / step)
+    hi = lo + n_steps * step
+    return lo, hi
+
+
 def grid_from_bounds(bounds: Dict[str, float], cell_size: float = 1.0,
                      z: Optional[float] = None, pad_frac: float = 0.03) -> GridSpec:
-    """Build a :class:`GridSpec` that fits ``bounds`` (with a small margin)."""
+    """Build a :class:`GridSpec` that fits ``bounds`` (with a small margin).
+
+    Axis limits are snapped to whole metres (see :func:`_snap_axis`) so the
+    grid's cell count can't drift by one from what the ray-tracing engine
+    computes internally.
+    """
     dx = bounds["x_max"] - bounds["x_min"]
     dy = bounds["y_max"] - bounds["y_min"]
     px, py = dx * pad_frac, dy * pad_frac
     if z is None:
         z = bounds["z_min"] + 0.1 * (bounds["z_max"] - bounds["z_min"])  # near floor
+    x_min, x_max = _snap_axis(bounds["x_min"] - px, bounds["x_max"] + px, cell_size)
+    y_min, y_max = _snap_axis(bounds["y_min"] - py, bounds["y_max"] + py, cell_size)
     return GridSpec(
-        x_min=bounds["x_min"] - px, x_max=bounds["x_max"] + px,
-        y_min=bounds["y_min"] - py, y_max=bounds["y_max"] + py,
+        x_min=x_min, x_max=x_max,
+        y_min=y_min, y_max=y_max,
         z=float(z), cell_size=cell_size,
     )

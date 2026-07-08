@@ -19,7 +19,7 @@ from typing import List, Sequence
 import numpy as np
 
 from . import config as cfg
-from .models import CoverageLayer, GridSpec, SceneConfig, SimulationResult, Transmitter
+from .models import CoverageLayer, GridSpec, MeshSurface, SceneConfig, SimulationResult, Transmitter
 
 _NO_COVERAGE_DBM = -120.0  # below this, a cell is considered unserved
 
@@ -29,19 +29,25 @@ def _dbm_to_mw(dbm: np.ndarray) -> np.ndarray:
 
 
 def aggregate(
-    grid: GridSpec,
+    grid: "GridSpec | MeshSurface",
     scene: SceneConfig,
     layers: Sequence[CoverageLayer],
     txs: Sequence[Transmitter],
     engine_name: str = "unknown",
 ) -> SimulationResult:
-    """Combine layers (parallel to ``txs``) into a :class:`SimulationResult`."""
-    ny, nx = grid.shape
+    """Combine layers (parallel to ``txs``) into a :class:`SimulationResult`.
+
+    ``grid`` may be a raster :class:`GridSpec` (layers shaped ``(ny, nx)``) or
+    a mesh-native :class:`MeshSurface` (layers shaped ``(N,)``, one value per
+    triangle) -- the arithmetic below is elementwise and shape-agnostic, so
+    ``out_shape`` is the only place the two modes are distinguished.
+    """
+    out_shape = layers[0].rsrp_dbm.shape if layers else grid.shape
     if not layers:
-        nan = np.full((ny, nx), np.nan, dtype=np.float32)
+        nan = np.full(out_shape, np.nan, dtype=np.float32)
         return SimulationResult(
             grid=grid, rss_dbm=nan.copy(), best_rsrp_dbm=nan.copy(),
-            best_server=np.full((ny, nx), -1, dtype=np.int32),
+            best_server=np.full(out_shape, -1, dtype=np.int32),
             sinr_db=nan.copy(), tx_names=[], engine=engine_name,
         )
 
@@ -64,7 +70,7 @@ def aggregate(
     # Sum of linear power per channel, then for the serving cell subtract the
     # serving power so only *other* co-channel TXs count as interference.
     unique_channels = np.unique(channels)
-    per_channel_lin = np.zeros((len(unique_channels), ny, nx))
+    per_channel_lin = np.zeros((len(unique_channels),) + out_shape)
     for i, ch in enumerate(unique_channels):
         mask = channels == ch
         per_channel_lin[i] = lin[mask].sum(axis=0)

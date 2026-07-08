@@ -120,12 +120,13 @@
           <button id="clearGeo" class="ghost">Clear</button>
         </div>
         <small class="note">Drop files in the <code>geometry/</code> folder. Geometry drives
-          Sionna ray tracing; <b>Bounding box</b> uses the geometry extent (or your manual
-          grid bounds), <b>Prediction mesh</b> uses the loaded mesh's area &amp; height.
+          Sionna ray tracing; <b>Bounding box</b> rasterises the geometry extent (or your manual
+          grid bounds) onto a cell grid, <b>Prediction mesh</b> computes coverage directly on the
+          loaded mesh's own triangles &mdash; no grid or cell size needed.
           The view auto-fits.</small>
       </div>
 
-      <div class="card">
+      <div class="card" id="sceneGridCard">
         <h3>Scene &amp; grid</h3>
         <div class="grid2">
           <label class="field">RX height z [m]<input type="number" id="s_z" step="0.1"></label>
@@ -137,6 +138,12 @@
         </div>
         <div class="btnrow"><button id="applyScene">Apply scene</button></div>
         <small class="note">Grid bounds and cell size define the measurement plane; Sionna RT uses the geometry for propagation.</small>
+      </div>
+      <div class="card" id="meshModeCard" style="display:none">
+        <h3>Scene &amp; grid</h3>
+        <small class="note">Coverage is computed directly on the prediction mesh's own
+          triangles &mdash; no bounding box or cell size to set. Switch back to
+          <b>Bounding box</b> above to use a rasterised grid instead.</small>
       </div>
     </div>
 

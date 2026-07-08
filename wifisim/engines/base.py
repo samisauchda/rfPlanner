@@ -15,7 +15,9 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Dict, List
 
-from ..models import CoverageLayer, GridSpec, SceneConfig, Transmitter
+import numpy as np
+
+from ..models import CoverageLayer, GridSpec, MeshSurface, SceneConfig, Transmitter
 
 
 class PropagationEngine(ABC):
@@ -52,6 +54,21 @@ class PropagationEngine(ABC):
         for tx in txs:
             out[tx.signature] = self.compute_layer(scene, grid, tx)
         return out
+
+    def compute_layers_mesh(
+        self, scene: SceneConfig, surface: MeshSurface, txs: List[Transmitter]
+    ) -> Dict[str, CoverageLayer]:
+        """Compute layers on a mesh-native measurement surface (one value per
+        triangle, no bounding box/cell size).  Not every engine supports this;
+        the default raises so unsupported engines fail clearly instead of
+        silently rasterizing.
+        """
+        raise NotImplementedError(f"{self.name} does not support mesh-native prediction")
+
+    def mesh_cell_centers(self, scene: SceneConfig, surface: MeshSurface) -> np.ndarray:
+        """World-space ``(N,3)`` centroid of each triangle in ``surface``,
+        aligned index-for-index with :meth:`compute_layers_mesh`'s output."""
+        raise NotImplementedError(f"{self.name} does not support mesh-native prediction")
 
     def close(self) -> None:  # pragma: no cover - optional resource cleanup
         """Release any heavy resources (GPU contexts, scenes).  Optional."""

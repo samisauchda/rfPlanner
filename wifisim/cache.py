@@ -23,16 +23,22 @@ from typing import Optional
 
 import numpy as np
 
-from .models import CoverageLayer, GridSpec, SceneConfig, Transmitter
+from .models import CoverageLayer, GridSpec, MeshSurface, SceneConfig, Transmitter
 
 
 def layer_key(
     engine_signature: str,
     scene: SceneConfig,
-    grid: GridSpec,
+    grid: "GridSpec | MeshSurface",
     tx: Transmitter,
 ) -> str:
-    """Deterministic cache key for one transmitter's layer."""
+    """Deterministic cache key for one transmitter's layer.
+
+    ``grid`` may be a raster :class:`GridSpec` or a mesh-native
+    :class:`MeshSurface`; both duck-type ``.signature``, and their hashed
+    payloads never overlap (different fields, plus a ``"kind"`` tag on
+    ``MeshSurface``), so grid-mode and mesh-mode keys can never collide.
+    """
     raw = "|".join([engine_signature, scene.signature, grid.signature, tx.signature])
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:32]
 

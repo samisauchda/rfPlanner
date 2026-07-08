@@ -24,7 +24,10 @@ const state = {
   drag:null, dpr: window.devicePixelRatio||1,
   geoFiles:[], footprint:{geometry:[],mesh:[]},
   routes:{}, viewMode:"2d",
-  geo3d:{geometry:[],mesh:[]}, routeHover:null
+  geo3d:{geometry:[],mesh:[]}, routeHover:null,
+  // mesh-native prediction mode: coverage on the mesh's own triangles, no grid.
+  mode:"grid", meshBounds:null, meshOverlay:null,
+  extent:null,   // view-fit bounds: state.grid in grid mode, meshBounds in mesh mode
 };
 const txVisible = name => { const t=state.txs.find(x=>x.name===name); return !t||t.enabled; };
 
@@ -36,7 +39,7 @@ const ctx = canvas.getContext("2d");
 function computeBase(){
   const r = display.getBoundingClientRect();
   const W=r.width, H=r.height, m=26;
-  const g=state.grid, ax=(g.x_max-g.x_min), ay=(g.y_max-g.y_min);
+  const g=state.extent, ax=(g.x_max-g.x_min), ay=(g.y_max-g.y_min);
   const availW=W-2*m, availH=H-2*m, sceneAspect=ax/ay;
   // Fit by width, then shrink to height if needed - preserving aspect so the
   // metres-per-pixel scale is identical on both axes (no stretch).
@@ -45,16 +48,16 @@ function computeBase(){
   state._W=W; state._H=H;
   state.base={x0:(W-w)/2, y0:(H-h)/2, w, h};
 }
-function sX(wx){ const g=state.grid; return state.base.x0 + (wx-g.x_min)/(g.x_max-g.x_min)*state.base.w; }
-function sY(wy){ const g=state.grid; return state.base.y0 + (g.y_max-wy)/(g.y_max-g.y_min)*state.base.h; }
+function sX(wx){ const g=state.extent; return state.base.x0 + (wx-g.x_min)/(g.x_max-g.x_min)*state.base.w; }
+function sY(wy){ const g=state.extent; return state.base.y0 + (g.y_max-wy)/(g.y_max-g.y_min)*state.base.h; }
 function worldToScreen(wx,wy){ const v=state.view; return [v.ox+v.k*sX(wx), v.oy+v.k*sY(wy)]; }
 function screenToWorld(px,py){
-  const v=state.view, g=state.grid, b=state.base;
+  const v=state.view, g=state.extent, b=state.base;
   const ssx=(px-v.ox)/v.k, ssy=(py-v.oy)/v.k;
   return [ g.x_min + (ssx-b.x0)/b.w*(g.x_max-g.x_min),
            g.y_max - (ssy-b.y0)/b.h*(g.y_max-g.y_min) ];
 }
-function metersToPx(m){ const g=state.grid; return m/(g.x_max-g.x_min)*state.base.w*state.view.k; }
+function metersToPx(m){ const g=state.extent; return m/(g.x_max-g.x_min)*state.base.w*state.view.k; }
 
 function fitDisplay(){
   computeBase();
@@ -81,7 +84,70 @@ function draw(){
   const W=state._W, H=state._H;
   ctx.clearRect(0,0,W,H);
   drawGraticule(); drawFootprint(); drawRoutes();
+  if(state.mode==="mesh"){
+    // Placeholder while activated but not yet run: a flat light-grey fill of
+    // the mesh's own triangles.  Replaced by the coloured per-triangle result
+    // as soon as a mesh-mode simulate() response is decoded.
+    if(state.meshOverlay) drawMeshOverlay(); else drawMeshFootprintFill();
+  }
   state.txs.filter(t=>txVisible(t.name)).forEach(drawTx);
+}
+function drawMeshFootprintFill(){
+  const meshes=(state.geo3d&&state.geo3d.mesh)||[]; if(!meshes.length) return;
+  ctx.save(); ctx.fillStyle="rgba(140,140,150,.4)";
+  meshes.forEach(m=>{
+    if(!m.vertices||!m.faces||!m.faces.length) return;
+    const v=m.vertices, f=m.faces, path=new Path2D();
+    for(let i=0;i<f.length;i+=3){
+      const a=f[i]*3, b=f[i+1]*3, c=f[i+2]*3;
+      const [ax,ay]=worldToScreen(v[a],v[a+1]);
+      const [bx,by]=worldToScreen(v[b],v[b+1]);
+      const [cx,cy]=worldToScreen(v[c],v[c+1]);
+      path.moveTo(ax,ay); path.lineTo(bx,by); path.lineTo(cx,cy); path.closePath();
+    }
+    ctx.fill(path);
+  });
+  ctx.restore();
+}
+function drawMeshOverlay(){
+  const mo=state.meshOverlay; if(!mo) return;
+  const predMesh=(state.geo3d&&state.geo3d.mesh||[])[0];
+  if(!drawMeshOverlaySurface2D(predMesh, mo)) drawMeshOverlayDots(mo);
+}
+function drawMeshOverlaySurface2D(m, mo){
+  // Solid, continuously-coloured surface: fill every mesh triangle (top-down
+  // projection) with its own coverage colour -- same face-order-alignment
+  // requirement/safety-check as addMeshOverlaySurface3D (the 3D counterpart),
+  // and falls back to per-triangle dots for the same reason if it can't be
+  // matched 1:1 to Sionna's own triangulation (e.g. a decimated preview mesh).
+  if(!m || m.decimated || !m.faces || !m.vertices) return false;
+  const nFaces=(m.faces.length/3)|0;
+  if(nFaces!==mo.n) return false;
+  const v=m.vertices, f=m.faces, {colors}=mo, W=state._W, H=state._H;
+  ctx.save();
+  for(let i=0;i<nFaces;i++){
+    const a=colors[i*4+3]; if(!a) continue;
+    const ia=f[i*3]*3, ib=f[i*3+1]*3, ic=f[i*3+2]*3;
+    const [ax,ay]=worldToScreen(v[ia],v[ia+1]);
+    const [bx,by]=worldToScreen(v[ib],v[ib+1]);
+    const [cx,cy]=worldToScreen(v[ic],v[ic+1]);
+    if(Math.max(ax,bx,cx)<0||Math.min(ax,bx,cx)>W||Math.max(ay,by,cy)<0||Math.min(ay,by,cy)>H) continue;
+    ctx.fillStyle=`rgba(${colors[i*4]},${colors[i*4+1]},${colors[i*4+2]},${(a/255).toFixed(3)})`;
+    ctx.beginPath(); ctx.moveTo(ax,ay); ctx.lineTo(bx,by); ctx.lineTo(cx,cy); ctx.closePath(); ctx.fill();
+  }
+  ctx.restore();
+  return true;
+}
+function drawMeshOverlayDots(mo){
+  const {centers,colors,n}=mo, W=state._W, H=state._H;
+  for(let i=0;i<n;i++){
+    const [px,py]=worldToScreen(centers[i*3], centers[i*3+1]);
+    if(px<-2||px>W+2||py<-2||py>H+2) continue;
+    const a=colors[i*4+3];
+    if(!a) continue;
+    ctx.fillStyle=`rgba(${colors[i*4]},${colors[i*4+1]},${colors[i*4+2]},${(a/255).toFixed(3)})`;
+    ctx.fillRect(px-1,py-1,2,2);
+  }
 }
 function drawFootprint(){
   const fp=state.footprint; if(!fp) return;
@@ -95,14 +161,17 @@ function drawFootprint(){
     ctx.stroke(); ctx.restore();
   };
   drawSegs(fp.geometry, "rgba(0,0,80,.45)", 1);        // building/scene edges (blue)
-  drawSegs(fp.mesh, "rgba(227,0,20,.45)", 1);          // prediction mesh (red)
+  // In mesh mode the light-grey fill (or the coloured result) already shows
+  // the prediction mesh; only draw its red wireframe in bbox mode, where it's
+  // just a reference surface rather than the active measurement surface.
+  if(state.mode!=="mesh") drawSegs(fp.mesh, "rgba(227,0,20,.45)", 1);
 }
 function niceStep(span){
   const raw=span/9, p=Math.pow(10,Math.floor(Math.log10(raw)));
   const n=raw/p; return (n<1.5?1:n<3.5?2:n<7.5?5:10)*p;
 }
 function drawGraticule(){
-  const g=state.grid, W=state._W, H=state._H;
+  const g=state.extent, W=state._W, H=state._H;
   const visSpanX=(W/state.view.k)/state.base.w*(g.x_max-g.x_min);
   const step=Math.max(niceStep(visSpanX), 0.001);
   ctx.save();
@@ -243,11 +312,19 @@ async function commitEditor(){
 async function refreshState(redraw=true){
   const s=await api.get("/api/state");
   state.grid=s.grid; state.scene=s.scene; state.txs=s.transmitters; state.cacheStatus=s.cache_status;
+  state.mode=s.mode||"grid"; state.meshBounds=s.mesh_bounds||null;
+  state.extent=(state.mode==="mesh" && state.meshBounds) ? state.meshBounds : state.grid;
+  syncMeshModeUI();
   el("enginePill").innerHTML=`engine <b>${s.engine.name}</b>`;
   el("enginePill").className="enginepill"+(s.engine.name==="sionna_rt"?" rt":"");
   renderCacheStats(s.cache); renderTxList(); syncSceneInputs(); syncEngineInputs(s.engine);
   if(redraw){ fitDisplay(); updateZoomReadout(); }
   rebuild3D();
+}
+function syncMeshModeUI(){
+  const mesh=state.mode==="mesh";
+  el("sceneGridCard").style.display = mesh ? "none" : "block";
+  el("meshModeCard").style.display = mesh ? "block" : "none";
 }
 function renderCacheStats(c){
   el("cacheStats").innerHTML=
@@ -262,10 +339,17 @@ async function run(){
   const btn=el("runBtn"); btn.disabled=true; btn.textContent="Running\u2026";
   try{
     const res=await api.send("/api/simulate","POST",{metric:state.metric, force:el("forceRun").checked});
-    state.overlay=res.overlay; heatmap.src=res.overlay.image; positionHeatmap();
-    decodeValues(res.overlay);
+    const ov=res.overlay;
+    if(ov.mode==="mesh"){
+      state.overlay=null; state.valueGrid=null; heatmap.src=""; heatmap.style.display="none";
+      decodeMeshOverlay(ov);
+    } else {
+      state.meshOverlay=null; heatmap.style.display="";
+      state.overlay=ov; heatmap.src=ov.image; positionHeatmap();
+      decodeValues(ov);
+    }
     res.per_tx.forEach(t=>state.cacheStatus[t.name]=true);
-    renderSummary(res.summary); renderCacheStats(res.cache); updateLegend(res.overlay);
+    renderSummary(res.summary); renderCacheStats(res.cache); updateLegend(ov);
     renderTxList(); draw(); rebuild3D();
   } finally { btn.disabled=false; btn.textContent="Run"; }
 }
@@ -297,6 +381,11 @@ function b64ToF32(b64){
   for(let i=0;i<n;i++) u[i]=bin.charCodeAt(i);
   return new Float32Array(u.buffer);
 }
+function b64ToU8(b64){
+  const bin=atob(b64), n=bin.length, u=new Uint8Array(n);
+  for(let i=0;i<n;i++) u[i]=bin.charCodeAt(i);
+  return u;
+}
 function decodeValues(ov){
   if(!ov || !ov.values){ state.valueGrid=null; return; }
   state.valueGrid={arr:b64ToF32(ov.values), ny:ov.shape[0], nx:ov.shape[1],
@@ -310,6 +399,25 @@ function valueAt(wx,wy){
   let r=Math.floor((wy-ymin)/(ymax-ymin)*g.ny);   // canonical: row 0 = y_min
   c=Math.max(0,Math.min(g.nx-1,c)); r=Math.max(0,Math.min(g.ny-1,r));
   return g.arr[r*g.nx+c];
+}
+
+/* ---------- mesh overlay (scattered per-triangle values) --------------- */
+function decodeMeshOverlay(ov){
+  state.meshOverlay={
+    values: b64ToF32(ov.values), colors: b64ToU8(ov.colors),
+    centers: b64ToF32(ov.cell_centers), n: ov.n_cells,
+    unit: ov.unit, label: ov.label,
+  };
+}
+function meshValueAt(wx,wy){
+  const mo=state.meshOverlay; if(!mo||!mo.n) return undefined;
+  let best=-1, bestD=Infinity;
+  for(let i=0;i<mo.n;i++){
+    const dx=mo.centers[i*3]-wx, dy=mo.centers[i*3+1]-wy;
+    const d=dx*dx+dy*dy;
+    if(d<bestD){ bestD=d; best=i; }
+  }
+  return best>=0 ? mo.values[best] : undefined;
 }
 function hideHover(){ el("hover").style.display="none"; }
 
@@ -336,8 +444,13 @@ window.addEventListener("mousemove", e=>{
     const hov=el("hover");
     if(inside){
       el("cursorReadout").innerHTML=`x ${wx.toFixed(1)} \u00b7 y ${wy.toFixed(1)} m`;
-      const g=state.valueGrid;
-      if(g){
+      const g=state.valueGrid, mo=state.meshOverlay;
+      if(state.mode==="mesh" && mo){
+        const v=meshValueAt(wx,wy);
+        const txt=(v===undefined||isNaN(v))?"no coverage":`${v.toFixed(1)} ${mo.unit}`;
+        hov.innerHTML=`x ${wx.toFixed(1)}, y ${wy.toFixed(1)} m \u00b7 <b>${txt}</b>`;
+        hov.style.left=px+"px"; hov.style.top=py+"px"; hov.style.display="block";
+      } else if(g){
         const v=valueAt(wx,wy);
         const txt=(v===undefined||isNaN(v))?"no coverage":`${v.toFixed(1)} ${g.unit}`;
         hov.innerHTML=`x ${wx.toFixed(1)}, y ${wy.toFixed(1)} m \u00b7 <b>${txt}</b>`;
@@ -434,6 +547,11 @@ async function applyGeometry(){
   if(g.footprint_segments!=null) hint += ` \u00b7 ${g.footprint_segments} edges`;
   el("geoFit").textContent = hint;
   if(g.warning){ alert("Geometry loaded, but: "+g.warning); }
+  // The measurement surface just changed (bbox <-> mesh, or a new mesh/bbox) --
+  // any previously displayed coverage no longer matches it, so clear it now
+  // rather than leaving a stale/misaligned heatmap up until the next Run.
+  state.overlay=null; state.meshOverlay=null; state.valueGrid=null;
+  heatmap.src=""; heatmap.style.display="";
   resetView();                        // recenter on the new extent
   await refreshState(true);
   await fetchFootprint();
@@ -831,11 +949,11 @@ async function setViewMode(v){
     stop3D();
   }
 }
-function gridCenter(){ const g=state.grid;
+function gridCenter(){ const g=state.extent;
   return {x:(g.x_min+g.x_max)/2, y:(g.y_min+g.y_max)/2, z:0}; }
 function fit3D(){
-  if(!t3.ready||!state.grid) return;
-  const g=state.grid;
+  if(!t3.ready||!state.extent) return;
+  const g=state.extent;
   t3.target=gridCenter();
   t3.sph.r=1.15*Math.max(g.x_max-g.x_min, g.y_max-g.y_min, 10);
 }
@@ -946,9 +1064,59 @@ function addMesh3D(m,color,opacity){
     new THREE.LineBasicMaterial({color, transparent:true,
       opacity:Math.min(1,opacity+0.35)})));
 }
+function addMeshOverlayPoints3D(mo){
+  // Fallback when a per-face solid surface can't be built (see
+  // addMeshOverlaySurface3D): Sionna gives one coverage value per mesh
+  // *triangle* (its centroid), not per vertex, and this point cloud is built
+  // straight from those centroids -- always correct regardless of how the
+  // prediction mesh's faces were triangulated.
+  const {centers,colors,n}=mo; if(!n) return;
+  const geo=new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.BufferAttribute(centers.subarray(0,n*3),3));
+  const colArr=new Float32Array(n*3);
+  for(let i=0;i<n;i++){
+    colArr[i*3]=colors[i*4]/255; colArr[i*3+1]=colors[i*4+1]/255; colArr[i*3+2]=colors[i*4+2]/255;
+  }
+  geo.setAttribute("color", new THREE.BufferAttribute(colArr,3));
+  const g=state.extent, span=g?Math.max(g.x_max-g.x_min,g.y_max-g.y_min):50;
+  const mat=new THREE.PointsMaterial({size:Math.max(0.1,span/300), vertexColors:true,
+    sizeAttenuation:true, transparent:true, opacity:0.95});
+  t3.dyn.add(new THREE.Points(geo,mat));
+}
+function addMeshOverlaySurface3D(m,mo){
+  // Solid, continuously-coloured surface: Sionna gives one value per mesh
+  // *triangle* (not per vertex), so this "unrolls" the footprint mesh's
+  // indexed geometry into a non-indexed one where every triangle gets its
+  // own 3 vertex copies, all 3 sharing that triangle's colour (flat shading).
+  // This only works if the footprint mesh (parsed independently by
+  // wifisim/mesh3d.py, for the 3D preview) has its triangles in the exact
+  // same order Sionna solved on -- true for an un-decimated, pure-triangle
+  // .ply/.obj (the normal case), verified below rather than assumed.
+  if(!m || m.decimated || !m.faces || !m.vertices) return false;
+  const nFaces=(m.faces.length/3)|0;
+  if(nFaces!==mo.n) return false;
+  const v=m.vertices, f=m.faces, {colors}=mo;
+  const pos=new Float32Array(nFaces*9), col=new Float32Array(nFaces*9);
+  for(let i=0;i<nFaces;i++){
+    const a=f[i*3]*3, b=f[i*3+1]*3, c=f[i*3+2]*3, o=i*9;
+    pos[o]=v[a]; pos[o+1]=v[a+1]; pos[o+2]=v[a+2];
+    pos[o+3]=v[b]; pos[o+4]=v[b+1]; pos[o+5]=v[b+2];
+    pos[o+6]=v[c]; pos[o+7]=v[c+1]; pos[o+8]=v[c+2];
+    const r=colors[i*4]/255, g=colors[i*4+1]/255, bl=colors[i*4+2]/255;
+    col[o]=r; col[o+1]=g; col[o+2]=bl;
+    col[o+3]=r; col[o+4]=g; col[o+5]=bl;
+    col[o+6]=r; col[o+7]=g; col[o+8]=bl;
+  }
+  const geo=new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.BufferAttribute(pos,3));
+  geo.setAttribute("color", new THREE.BufferAttribute(col,3));
+  t3.dyn.add(new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+    vertexColors:true, side:THREE.DoubleSide})));
+  return true;
+}
 function rebuild3D(){
-  if(!t3.ready||state.viewMode!=="3d"||!state.grid) return;
-  const g=state.grid;
+  if(!t3.ready||state.viewMode!=="3d"||!state.extent) return;
+  const g=state.extent;
   /* clear the dynamic group */
   while(t3.dyn.children.length){
     const o=t3.dyn.children.pop();
@@ -957,15 +1125,27 @@ function rebuild3D(){
   const cx=(g.x_min+g.x_max)/2, cy=(g.y_min+g.y_max)/2;
   const w=g.x_max-g.x_min, h=g.y_max-g.y_min;
 
-  /* coverage plane (heatmap texture) at the measurement height grid.z */
-  const mat = heatmap.src
-    ? new THREE.MeshBasicMaterial({map:new THREE.TextureLoader().load(heatmap.src),
-        transparent:true, opacity:0.92, side:THREE.DoubleSide})
-    : new THREE.MeshBasicMaterial({color:0xdde3ec, transparent:true, opacity:0.55,
-        side:THREE.DoubleSide});
-  const plane=new THREE.Mesh(new THREE.PlaneGeometry(w,h),mat);
-  plane.position.set(cx,cy,g.z);
-  t3.dyn.add(plane);
+  if(state.mode==="mesh"){
+    /* mesh-native result: a solid surface flat-shaded per triangle (falling
+       back to a point cloud only if the preview mesh can't be matched 1:1 to
+       Sionna's own triangulation) -- no rectangular coverage plane, since
+       there is no bounding box in this mode. */
+    if(state.meshOverlay){
+      const predMesh=(state.geo3d&&state.geo3d.mesh||[])[0];
+      if(!addMeshOverlaySurface3D(predMesh, state.meshOverlay))
+        addMeshOverlayPoints3D(state.meshOverlay);
+    }
+  } else {
+    /* coverage plane (heatmap texture) at the measurement height grid.z */
+    const mat = heatmap.src
+      ? new THREE.MeshBasicMaterial({map:new THREE.TextureLoader().load(heatmap.src),
+          transparent:true, opacity:0.92, side:THREE.DoubleSide})
+      : new THREE.MeshBasicMaterial({color:0xdde3ec, transparent:true, opacity:0.55,
+          side:THREE.DoubleSide});
+    const plane=new THREE.Mesh(new THREE.PlaneGeometry(w,h),mat);
+    plane.position.set(cx,cy,state.grid.z);
+    t3.dyn.add(plane);
+  }
 
   /* ground reference grid at z=0 */
   const gh=new THREE.GridHelper(Math.max(w,h),20,0x8090b0,0xc5cddd);
@@ -979,7 +1159,14 @@ function rebuild3D(){
     g3.geometry.forEach(m=>addMesh3D(m,0x000050,0.22));
   else
     addSegs3D(t3.dyn, state.footprint.geometry, 0x000050, 0.02);
-  if((g3.mesh||[]).length)
+  if(state.mode==="mesh"){
+    // Light-grey placeholder while activated but not yet run; once a result
+    // exists the coloured point cloud (added above) replaces it entirely.
+    if(!state.meshOverlay){
+      if((g3.mesh||[]).length) g3.mesh.forEach(m=>addMesh3D(m,0xb0b0b8,0.35));
+      else addSegs3D(t3.dyn, state.footprint.mesh, 0xb0b0b8, 0.05);
+    }
+  } else if((g3.mesh||[]).length)
     g3.mesh.forEach(m=>addMesh3D(m,0xe30014,0.15));
   else
     addSegs3D(t3.dyn, state.footprint.mesh, 0xe30014, 0.04);

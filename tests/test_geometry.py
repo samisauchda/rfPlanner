@@ -60,11 +60,28 @@ def test_grid_from_bounds_fits_and_aspect():
     bounds = {"x_min": 0, "x_max": 10, "y_min": 0, "y_max": 6, "z_min": 0, "z_max": 3}
     g = geo.grid_from_bounds(bounds, cell_size=0.5, z=1.5)
     assert isinstance(g, GridSpec)
-    # grid spans the bounds (plus small pad), aspect preserved
+    # grid spans the bounds (plus small pad)
     assert g.x_min <= 0 and g.x_max >= 10 and g.y_min <= 0 and g.y_max >= 6
-    aspect = (g.x_max - g.x_min) / (g.y_max - g.y_min)
-    assert abs(aspect - (10 / 6)) < 0.01            # 10x6 box -> ~1.667 aspect
     assert g.z == 1.5
+
+
+def test_grid_from_bounds_uses_whole_metre_axis_limits():
+    # Fractional bounds (as produced by e.g. a mesh with odd-shaped geometry)
+    # must still snap to whole-metre axis limits with an exact-multiple span,
+    # so the engine's own size/cell_size cell count can never drift by one
+    # from GridSpec.nx/ny (see wifisim/combine.py ValueError regression).
+    bounds = {"x_min": -12.37, "x_max": 44.86, "y_min": 3.14, "y_max": 58.02,
+              "z_min": 0, "z_max": 3}
+    for cell_size in (0.5, 0.3, 1.0, 0.25):
+        g = geo.grid_from_bounds(bounds, cell_size=cell_size, z=1.5)
+        assert g.x_min == int(g.x_min) and g.x_max == int(g.x_max)
+        assert g.y_min == int(g.y_min) and g.y_max == int(g.y_max)
+        assert g.x_min <= bounds["x_min"] and g.x_max >= bounds["x_max"]
+        assert g.y_min <= bounds["y_min"] and g.y_max >= bounds["y_max"]
+        nx = (g.x_max - g.x_min) / cell_size
+        ny = (g.y_max - g.y_min) / cell_size
+        assert abs(nx - round(nx)) < 1e-6            # exact multiple, no off-by-one
+        assert abs(ny - round(ny)) < 1e-6
 
 
 def test_union_bounds():

@@ -225,6 +225,32 @@ class GridSpec:
         return _hash_obj(asdict(self))
 
 
+@dataclass(frozen=True)
+class MeshSurface:
+    """Measurement surface = a prediction mesh's own triangles.
+
+    Unlike :class:`GridSpec`'s axis-aligned raster, coverage is sampled
+    directly on the mesh's actual (possibly sloped/stepped) geometry -- one
+    cell per triangle face, no bounding box or cell size involved.  Used
+    wherever :class:`GridSpec` is used (:func:`wifisim.combine.aggregate`,
+    :func:`wifisim.cache.layer_key`, engine ``compute_layers*``) via the same
+    ``signature``/``shape`` duck-typed interface.
+    """
+
+    mesh_file: str
+    mesh_sha: str
+
+    @property
+    def shape(self) -> Tuple[int]:
+        """Only used as a fallback shape when there are zero active TX; the
+        real per-run shape comes from the engine's actual solve output."""
+        return (0,)
+
+    @property
+    def signature(self) -> str:
+        return _hash_obj({"kind": "mesh_surface", **asdict(self)})
+
+
 # --------------------------------------------------------------------------- #
 # Scene
 # --------------------------------------------------------------------------- #
@@ -313,10 +339,12 @@ class CoverageLayer:
 class SimulationResult:
     """Aggregated result for a whole scene.
 
-    Arrays are all ``(ny, nx)`` aligned to ``grid``.
+    Arrays are all aligned to ``grid``: shape ``(ny, nx)`` for a raster
+    :class:`GridSpec`, or ``(N,)`` -- one value per mesh triangle -- for a
+    mesh-native :class:`MeshSurface`.
     """
 
-    grid: GridSpec
+    grid: "GridSpec | MeshSurface"
     rss_dbm: np.ndarray                 # aggregate received signal strength
     best_rsrp_dbm: np.ndarray           # strongest single-TX power
     best_server: np.ndarray             # index of strongest TX (-1 = none)
@@ -326,6 +354,8 @@ class SimulationResult:
     cache_misses: int = 0
     engine: str = "unknown"
     timing_s: float = 0.0
+    cell_centers: Optional[np.ndarray] = None   # (N,3) world-space triangle
+                                                 # centroids; mesh mode only
 
     def summary(self) -> Dict[str, Any]:
         finite = np.isfinite(self.best_rsrp_dbm)

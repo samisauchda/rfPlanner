@@ -95,10 +95,7 @@ def _metric_array(result: SimulationResult, metric: str) -> np.ndarray:
     }[metric]
 
 
-def colorize(
-    data: np.ndarray, spec: MetricSpec, vmin: Optional[float] = None, vmax: Optional[float] = None
-) -> np.ndarray:
-    """Map a 2-D array to an RGBA uint8 image (NaN -> fully transparent)."""
+def _norm_and_cmap(spec: MetricSpec, vmin: Optional[float], vmax: Optional[float]):
     vmin = spec.vmin if vmin is None else vmin
     vmax = spec.vmax if vmax is None else vmax
     norm = mcolors.Normalize(vmin=vmin, vmax=vmax, clip=True)
@@ -106,7 +103,15 @@ def colorize(
         cmap = matplotlib.colormaps[spec.cmap]
     except (KeyError, AttributeError):
         cmap = cm.get_cmap(spec.cmap)
-    rgba = cmap(norm(np.ma.masked_invalid(data)))  # (ny, nx, 4) floats
+    return norm, cmap
+
+
+def colorize(
+    data: np.ndarray, spec: MetricSpec, vmin: Optional[float] = None, vmax: Optional[float] = None
+) -> np.ndarray:
+    """Map an array (any shape) to an RGBA uint8 image (NaN -> fully transparent)."""
+    norm, cmap = _norm_and_cmap(spec, vmin, vmax)
+    rgba = cmap(norm(np.ma.masked_invalid(data)))  # (..., 4) floats
     rgba[..., 3] = np.where(np.isfinite(data), rgba[..., 3], 0.0)
     return (rgba * 255).astype(np.uint8)
 
@@ -136,6 +141,7 @@ def render_overlay(
     vals_b64 = base64.b64encode(vals.tobytes()).decode("ascii")
 
     return {
+        "mode": "grid",
         "image": f"data:image/png;base64,{b64}",
         "metric": metric,
         "label": spec.label,
@@ -146,6 +152,44 @@ def render_overlay(
         "extent": list(result.grid.extent),
         "values": vals_b64,                 # float32, row-major, canonical
         "shape": [int(vals.shape[0]), int(vals.shape[1])],  # [ny, nx]
+    }
+
+
+def render_mesh_overlay(
+    result: SimulationResult,
+    metric: str = "best_rsrp",
+    vmin: Optional[float] = None,
+    vmax: Optional[float] = None,
+) -> dict:
+    """Serialize a mesh-native result: one value + colour per triangle, plus
+    the triangle centroids -- there is no rectangular image to rasterize, so
+    (unlike :func:`render_overlay`) this returns scattered data for the
+    front-end to draw itself (2-D dots, 3-D per-face mesh colouring).
+    """
+    spec = METRIC_SPECS[metric]
+    data = _metric_array(result, metric)          # (N,)
+    norm, cmap = _norm_and_cmap(spec, vmin, vmax)
+    rgba = cmap(norm(np.ma.masked_invalid(data)))  # (N, 4) floats
+    rgba[..., 3] = np.where(np.isfinite(data), rgba[..., 3], 0.0)
+    colors = (rgba * 255).astype(np.uint8)
+
+    vals_b64 = base64.b64encode(np.ascontiguousarray(data, dtype=np.float32).tobytes()).decode("ascii")
+    colors_b64 = base64.b64encode(np.ascontiguousarray(colors, dtype=np.uint8).tobytes()).decode("ascii")
+    centers = np.ascontiguousarray(result.cell_centers, dtype=np.float32)
+    centers_b64 = base64.b64encode(centers.tobytes()).decode("ascii")
+
+    return {
+        "mode": "mesh",
+        "metric": metric,
+        "label": spec.label,
+        "unit": spec.unit,
+        "vmin": spec.vmin if vmin is None else vmin,
+        "vmax": spec.vmax if vmax is None else vmax,
+        "cmap": spec.cmap,
+        "values": vals_b64,          # float32 (N,)
+        "colors": colors_b64,        # uint8 (N,4) RGBA
+        "cell_centers": centers_b64,  # float32 (N,3)
+        "n_cells": int(data.shape[0]),
     }
 
 

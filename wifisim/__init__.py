@@ -20,6 +20,7 @@ __version__ = "0.1.0"
 from .models import (
     AntennaConfig,
     GridSpec,
+    MeshSurface,
     SceneConfig,
     Transmitter,
     CoverageLayer,
@@ -35,6 +36,7 @@ __all__ = [
     "__version__",
     "AntennaConfig",
     "GridSpec",
+    "MeshSurface",
     "SceneConfig",
     "Transmitter",
     "CoverageLayer",
